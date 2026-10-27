@@ -2,9 +2,9 @@
 
 import os
 
-# Motwi's public Twitch app (device code flow). Not a secret. Empty until the app is registered;
+# Motwi's public Twitch app (device code flow). Not a secret, so it ships in the code;
 # MOTWI_TWITCH_CLIENT_ID overrides it for development.
-CLIENT_ID = ""
+CLIENT_ID = "fo0j62netc6u54f0wqf4khruex5exy"
 
 SCOPES: tuple[str, ...] = (
     "user:read:chat",
