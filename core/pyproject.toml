@@ -1,0 +1,33 @@
+[project]
+name = "motwi"
+version = "0.1.0"
+description = "Motwi core engine: AI-assisted Twitch chat moderation"
+authors = [
+    { name = "H4ck3r_pr0_g4m3r", email = "nagy.peter.zalan@gmail.com" }
+]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "httpx>=0.28.1",
+]
+
+[project.scripts]
+motwi = "motwi.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.24,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.1",
+    "respx>=0.23.1",
+    "ruff>=0.17.3",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
