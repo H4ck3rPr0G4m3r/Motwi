@@ -11,7 +11,8 @@ class Plan:
     kind: Kind
     delete: bool
     duration_s: int | None
-    ladder_index: int | None
+    ladder_index: int | None  # the ladder step executed (after the ceiling), -1 = delete only
+    level: int | None = None  # escalation position this offense earned (before the ceiling)
 
 
 NO_ACTION = Plan(Kind.NONE, False, None, None)
@@ -43,12 +44,18 @@ def _cap(ladder: Sequence[LadderStep], ceiling: Ceiling) -> int:
 def _resolve(
     base: int, ceiling: Ceiling, ladder: Sequence[LadderStep], last_index: int | None
 ) -> Plan:
-    idx = base if last_index is None else max(base, last_index + 1)
-    idx = min(idx, len(ladder) - 1, _cap(ladder, ceiling))
+    """Every offense moves the chatter one step up; the ceiling only caps what is executed.
+
+    `last_index` is the level of the chatter's previous offense, so capped offenses (a
+    warn-only rule, a delete-only blocked word) still count toward escalation (spec 5.3).
+    """
+    level = base if last_index is None else max(base, last_index + 1)
+    level = min(level, len(ladder) - 1)
+    idx = min(level, _cap(ladder, ceiling))
     if idx < 0:
-        return Plan(Kind.DELETE, True, None, -1)
+        return Plan(Kind.DELETE, True, None, -1, level)
     step = ladder[idx]
-    return Plan(step.kind, True, step.duration_s, idx)
+    return Plan(step.kind, True, step.duration_s, idx, level)
 
 
 def decide_ai(

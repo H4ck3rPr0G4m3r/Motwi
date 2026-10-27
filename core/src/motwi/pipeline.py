@@ -49,7 +49,8 @@ class Pipeline:
         self._spam.reset()
         self._known.clear()
         self._context.clear()
-        self._user_locks.clear()
+        # keep locks a message is holding right now, so that user's order still holds
+        self._user_locks = {u: lock for u, lock in self._user_locks.items() if lock.locked()}
 
     async def handle(self, msg: ChatMessage) -> ActionRecord | None:
         # Everything up to the first await is synchronous, so concurrent handle() calls

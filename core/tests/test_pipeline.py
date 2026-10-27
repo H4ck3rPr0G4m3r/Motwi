@@ -1,3 +1,4 @@
+import asyncio
 import json
 from itertools import count
 
@@ -259,3 +260,13 @@ async def test_reset_stream_forgets_known_chatters_and_context(make_rig):
     last = rig.ai.calls[-1]
     assert "recent_from_user" in last["messages"][0]
     assert last["recent_chat"] == []
+
+
+async def test_reset_stream_keeps_locks_held_by_in_flight_messages(make_rig):
+    rig = make_rig()
+    held = rig.pipeline._user_locks.setdefault("id-busy", asyncio.Lock())
+    rig.pipeline._user_locks.setdefault("id-idle", asyncio.Lock())
+    await held.acquire()
+    rig.pipeline.reset_stream()
+    assert rig.pipeline._user_locks == {"id-busy": held}
+    held.release()

@@ -71,3 +71,11 @@ def test_parse_plain_fence_without_language():
 
 def test_parse_empty_results_is_empty_dict():
     assert parse_verdicts('{"results": []}', req_with_one_message_and_rule()) == {}
+
+
+def test_parse_accepts_quoted_numeric_scores():
+    req = BuiltRequest([], {"m1": "a", "m2": "b"}, {})
+    out = parse_verdicts(
+        '{"results":[{"id":"m1","score":"7.5","reason":"x"},{"id":"m2","score":"nan"}]}', req
+    )
+    assert list(out) == ["a"] and out["a"].score == 7.5
