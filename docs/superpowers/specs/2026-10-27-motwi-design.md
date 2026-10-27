@@ -1,7 +1,7 @@
 # Motwi design
 
 Date: 2026-10-27
-Status: reviewed, awaiting owner approval
+Status: approved by owner 2026-10-27
 
 Motwi is a rewrite of the older Twitch-Ai-moderator (`../Twitch-Ai-moderator`). It keeps the core idea and redoes the system, the code, and the experience.
 
@@ -213,7 +213,7 @@ Every message that reaches the AI stage and cannot be scored is recorded as "unc
 
 - When the decision is "ban request", Motwi:
   1. deletes the message
-  2. immediately puts the chatter in a **hold timeout** (default 10 min, configurable), so they can't keep posting while someone decides
+  2. immediately puts the chatter in a **hold timeout**, so they can't keep posting while someone decides. This is a setting: on by default, with a configurable length (default 10 min). With it off, the chatter stays in chat until someone answers
   3. shows the pop-up to the streamer and every connected mod
 - The pop-up shows the score, the message, the reason, Ban / Deny buttons, and who is currently looking at it.
 - **The first answer wins.** Everyone's pop-up then collapses to a one-line receipt ("xx_v0id_xx banned by Brakkenhoff", with Undo), which fades after a few seconds.
