@@ -1,10 +1,12 @@
 """Shared test helpers."""
 
+import asyncio
 from dataclasses import replace
 
 import pytest
 
 from motwi.models import Kind, Source, Status
+from motwi.moderation import ExecutorError
 from motwi.store import NewAction, Store
 
 
@@ -30,6 +32,44 @@ def make_new_action(**overrides) -> NewAction:
         error=None,
     )
     return replace(base, **overrides)
+
+
+class RecordingExecutor:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+        self.fail_next: str | None = None
+
+    def _maybe_fail(self, name: str) -> None:
+        if self.fail_next == name:
+            self.fail_next = None
+            raise ExecutorError(f"{name} failed")
+
+    async def delete_message(self, message_id):
+        await asyncio.sleep(0)
+        self._maybe_fail("delete")
+        self.calls.append(("delete", message_id))
+
+    async def warn(self, user_id, reason):
+        self._maybe_fail("warn")
+        self.calls.append(("warn", user_id, reason))
+
+    async def send_chat(self, text):
+        self._maybe_fail("chat")
+        self.calls.append(("chat", text))
+
+    async def timeout(self, user_id, seconds, reason):
+        await asyncio.sleep(0)
+        self._maybe_fail("timeout")
+        self.calls.append(("timeout", user_id, seconds, reason))
+
+    async def ban(self, user_id, reason):
+        await asyncio.sleep(0)
+        self._maybe_fail("ban")
+        self.calls.append(("ban", user_id, reason))
+
+    async def unban(self, user_id):
+        self._maybe_fail("unban")
+        self.calls.append(("unban", user_id))
 
 
 @pytest.fixture
