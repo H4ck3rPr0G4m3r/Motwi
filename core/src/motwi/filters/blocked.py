@@ -12,7 +12,8 @@ _ZERO_WIDTH = re.compile("[\u200b-\u200f\u2060\ufeff]")
 _LEET = str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a",
                        "5": "s", "7": "t", "@": "a", "$": "s"})
 _SPLIT = re.compile(r"[^a-z0-9]+")
-_REPEAT = re.compile(r"(.)\1+")
+_REPEAT = re.compile(r"(.)\1{2,}")
+_SEVERITY = {Ceiling.DELETE: 0, Ceiling.WARN: 1, Ceiling.TIMEOUT: 2, Ceiling.BAN: 3}
 
 
 @dataclass(frozen=True)
@@ -24,7 +25,7 @@ class BlockedWord:
 
 
 def normalize_tokens(text: str) -> list[str]:
-    text = unicodedata.normalize("NFKC", text).lower()
+    text = unicodedata.normalize("NFKD", text).lower()
     text = _ZERO_WIDTH.sub("", text)
     text = "".join(c for c in text if not unicodedata.category(c).startswith("M"))
     tokens = [t for t in _SPLIT.split(text.translate(_LEET)) if t]
@@ -37,7 +38,7 @@ def normalize_tokens(text: str) -> list[str]:
         else:
             merged.extend(run)
 
-    return [_REPEAT.sub(r"\1", t) for t in merged]
+    return [_REPEAT.sub(r"\1\1", t) for t in merged]
 
 
 class BlockedWords:
@@ -50,8 +51,14 @@ class BlockedWords:
 
     def match(self, text: str) -> BlockedWord | None:
         tokens = normalize_tokens(text)
-        for word, phrase in self._entries:
-            n = len(phrase)
-            if any(tokens[i:i + n] == phrase for i in range(len(tokens) - n + 1)):
-                return word
-        return None
+        hits = [word for word, phrase in self._entries if _contains(tokens, phrase)]
+        return max(hits, key=_rank, default=None)
+
+
+def _contains(tokens: list[str], phrase: list[str]) -> bool:
+    n = len(phrase)
+    return any(tokens[i:i + n] == phrase for i in range(len(tokens) - n + 1))
+
+
+def _rank(word: BlockedWord) -> tuple[int, int]:
+    return _SEVERITY[word.ceiling], word.base_index
