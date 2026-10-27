@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Motwi main window</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<style>
+  :root{
+    --page:#0b0b0d; --win:#131316; --rail:#0f0f12; --panel:#18181b; --panel-2:#1f1f23; --line:#2a2a30;
+    --text:#efeff1; --muted:#adadb8; --dim:#8a8a94;
+    --motwi:#4fd1b5; --motwi-ink:#06231d; --motwi-soft:#16302a;
+    /* action series, validated for dark surface (stack order: warn, ban, deleted, timeout) */
+    --warn:#c98500; --ban:#d55181; --del:#3987e5; --timeout:#d95926;
+    --r:6px;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--page);color:var(--text);font:14px/1.45 Inter,system-ui,sans-serif;padding:32px 28px 80px}
+  header.page{max-width:1180px;margin:0 auto 24px}
+  header.page h1{font-size:22px;font-weight:600;letter-spacing:-.01em}
+  header.page p{color:var(--muted);margin-top:6px;max-width:72ch}
+  .caption{max-width:1180px;margin:36px auto 10px;font-size:15px;font-weight:600}
+  .mono{font-family:"JetBrains Mono",monospace}
+
+  .win{max-width:1180px;margin:0 auto;height:740px;background:var(--win);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:grid;grid-template-columns:216px 1fr;grid-template-rows:36px 1fr}
+  .titlebar{grid-column:1/-1;display:flex;align-items:center;padding:0 14px;border-bottom:1px solid var(--line);background:var(--rail);font-size:12px;color:var(--dim);gap:8px}
+  .titlebar .dots{margin-left:auto;display:flex;gap:14px;color:var(--dim)}
+  .rail{background:var(--rail);border-right:1px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:2px}
+  .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 16px}
+  .logo{width:26px;height:26px;border-radius:7px;background:var(--motwi);color:var(--motwi-ink);font:700 14px Inter;display:grid;place-items:center}
+  .brand b{font-size:15px}
+  .nav{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--r);color:var(--muted);font-weight:500;font-size:13.5px}
+  .nav i{font-size:17px}
+  .nav.on{background:var(--panel-2);color:var(--text)}
+  .nav .badge{margin-left:auto;font:600 10.5px "JetBrains Mono";background:#2a2a30;color:var(--muted);padding:1px 6px;border-radius:9px}
+  .rail .status{margin-top:auto;border-top:1px solid var(--line);padding:12px 8px 2px;font-size:12px;color:var(--muted);display:grid;gap:8px}
+  .rail .status div{display:flex;gap:8px;align-items:center}
+  .live{width:7px;height:7px;border-radius:50%;background:var(--motwi);box-shadow:0 0 0 3px var(--motwi-soft)}
+
+  .main{overflow:hidden;padding:26px 30px;display:flex;flex-direction:column;gap:22px}
+  .pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
+  .pagehead h2{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  .pagehead p{color:var(--muted);font-size:13px;margin-top:2px}
+
+  /* Rules page */
+  .rules{display:grid;grid-template-columns:1fr 340px;gap:22px;min-height:0;flex:1}
+  .stack{display:flex;flex-direction:column;gap:22px;min-height:0}
+  .sec h3{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .sec h3 span{color:var(--dim);font-weight:500}
+  .list{border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+  .rule{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid var(--line)}
+  .rule:first-child{border-top:0}
+  .rule .txt{font-size:13.5px}
+  .chip{font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:4px;background:#26262c;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+  .chip .sw{width:8px;height:8px;border-radius:2px}
+  .rule .x{color:var(--dim);font-size:15px}
+  .add{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+  .add .in{flex:1;height:32px;border-radius:4px;background:var(--panel-2);border:1px solid var(--line);color:var(--dim);font-size:13px;display:flex;align-items:center;padding:0 10px}
+  .b{height:32px;border-radius:4px;border:0;font:600 12.5px Inter;padding:0 12px;background:#2f2f35;color:var(--text);display:inline-flex;align-items:center;gap:6px}
+  .b.pri{background:var(--motwi);color:var(--motwi-ink)}
+  .ctx{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:8px 12px}
+  .ctx b{color:var(--text);font-weight:600}
+  .words{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px}
+  .words .chip{background:#22222a}
+
+  .side{display:flex;flex-direction:column;gap:22px}
+  .card{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:14px}
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);background:var(--panel-2);border-radius:5px;padding:3px;gap:3px}
+  .seg div{text-align:center;font-size:12.5px;font-weight:600;padding:6px 0;border-radius:4px;color:var(--muted)}
+  .seg .on{background:#2f2f35;color:var(--text)}
+  .scale{margin-top:14px;position:relative;height:30px}
+  .scale .track{position:absolute;left:0;right:0;top:10px;height:4px;border-radius:2px;background:linear-gradient(90deg,#2a2a30 0 60%,var(--warn) 60% 75%,var(--timeout) 75% 90%,var(--ban) 90%)}
+  .scale .tk{position:absolute;top:18px;font:500 10.5px "JetBrains Mono";color:var(--dim);transform:translateX(-50%)}
+  .legend-row{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);margin-top:6px}
+  .test .in{height:60px;align-items:flex-start;padding-top:8px}
+  .result{margin-top:10px;border-top:1px solid var(--line);padding-top:10px;font-size:12.5px;display:grid;gap:4px}
+  .result .row{display:flex;justify-content:space-between}
+  .sm{font-size:12px;color:var(--muted)}
+
+  /* Stats page */
+  .tabs{display:flex;gap:4px;background:var(--panel-2);border-radius:5px;padding:3px}
+  .tabs div{font-size:12.5px;font-weight:600;padding:5px 12px;border-radius:4px;color:var(--muted)}
+  .tabs .on{background:#2f2f35;color:var(--text)}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+  .kpi{padding:14px 16px;border-left:1px solid var(--line)}
+  .kpi:first-child{border-left:0}
+  .kpi .l{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .kpi .l .sw{width:8px;height:8px;border-radius:2px}
+  .kpi .v{font:600 24px "JetBrains Mono";margin-top:4px;letter-spacing:-.02em}
+  .kpi .d{font-size:11.5px;color:var(--dim)}
+  .charts{display:grid;grid-template-columns:1.6fr 1fr;gap:22px;flex:1;min-height:0}
+  .chart{border:1px solid var(--line);border-radius:var(--r);background:var(--panel);padding:14px 16px;display:flex;flex-direction:column}
+  .chart h3{font-size:13px;font-weight:600}
+  .chart .sub{font-size:12px;color:var(--dim)}
+  .legend{display:flex;gap:14px;margin-top:10px;font-size:12px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .bars{flex:1;display:grid;grid-template-columns:28px repeat(7,1fr);gap:0 14px;align-items:end;margin-top:14px;position:relative}
+  .ylab{align-self:stretch;display:flex;flex-direction:column;justify-content:space-between;font:500 10.5px "JetBrains Mono";color:var(--dim);padding-bottom:20px;text-align:right;line-height:0}
+  .col{display:grid;grid-template-rows:1fr 20px;height:100%}.area{position:relative}.area .stk{position:absolute;left:0;right:0;bottom:0}
+  .stk{display:flex;flex-direction:column-reverse;gap:2px;width:100%}
+  .stk div{width:100%}
+  .stk div:last-child{border-radius:4px 4px 0 0}
+  .xl{font:500 10.5px "JetBrains Mono";color:var(--dim);text-align:center;padding-top:6px}
+  .grid-lines{position:absolute;left:42px;right:0;top:0;bottom:20px;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none}
+  .grid-lines div{border-top:1px solid #232328}
+  .hb{display:grid;gap:12px;margin-top:14px}
+  .hb .row{display:grid;grid-template-columns:1fr 40px;gap:4px 10px;align-items:center;font-size:12.5px}
+  .hb .row .bar{grid-column:1/-1;height:8px;border-radius:0 4px 4px 0;background:var(--muted);opacity:.75}
+  .hb .row .n{text-align:right;font:600 12px "JetBrains Mono";color:var(--muted)}
+  .foot{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1>The Motwi window: where you set it up and look back</h1>
+  <p>Not something you watch live. Two screens: Rules (what it enforces) and Stats (what happened). Sample data. Tell me what is wrong or missing.</p>
+</header>
+
+<div class="caption">Rules</div>
+<div class="win">
+  <div class="titlebar"><span>Motwi</span><div class="dots"><i class="ph ph-minus"></i><i class="ph ph-square"></i><i class="ph ph-x"></i></div></div>
+  <aside class="rail">
+    <div class="brand"><div class="logo">M</div><b>Motwi</b></div>
+    <div class="nav"><i class="ph ph-house"></i>Overview</div>
+    <div class="nav on"><i class="ph ph-scroll"></i>Rules</div>
+    <div class="nav"><i class="ph ph-clock-counter-clockwise"></i>History</div>
+    <div class="nav"><i class="ph ph-users"></i>People</div>
+    <div class="nav"><i class="ph ph-chart-bar"></i>Stats</div>
+    <div class="nav"><i class="ph ph-shield-check"></i>Mods<span class="badge">2</span></div>
+    <div class="nav"><i class="ph ph-gear-six"></i>Settings</div>
+    <div class="status">
+      <div><span class="live"></span>Watching h4ck3r_live</div>
+      <div><i class="ph ph-cpu"></i>Gemini 2.5 Flash, backup OpenRouter</div>
+      <div><i class="ph ph-coins"></i><span class="mono">$0.31</span> this month</div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="pagehead">
+      <div><h2>Rules</h2><p>Motwi reads these on every message. Write them the way you would tell a mod.</p></div>
+    </div>
+    <div class="rules">
+      <div class="stack">
+        <div class="sec">
+          <h3>Always <span>community rules</span></h3>
+          <div class="list">
+            <div class="rule"><span class="txt">No hate speech, slurs, or targeted harassment</span><span class="chip"><span class="sw" style="background:var(--ban)"></span>Up to ban</span><i class="ph ph-x x"></i></div>
+            <div class="rule"><span class="txt">No self-promo or links to other channels</span><span class="chip"><span class="sw" style="background:var(--del)"></span>Delete</span><i class="ph ph-x x"></i></div>
+            <div class="rule"><span class="txt">No backseating unless I ask for help</span><span class="chip"><span class="sw" style="background:var(--warn)"></span>Warn</span><i class="ph ph-x x"></i></div>
+            <div class="rule"><span class="txt">Roasting me is fine, roasting other chatters is not</span><span class="chip"><span class="sw" style="background:var(--timeout)"></span>Up to timeout</span><i class="ph ph-x x"></i></div>
+            <div class="add"><div class="in">Add a rule, for example "no political arguments"</div><button class="b pri"><i class="ph ph-plus"></i>Add</button></div>
+          </div>
+        </div>
+        <div class="sec">
+          <h3>This stream only <span>cleared when the stream ends</span></h3>
+          <div class="ctx"><i class="ph ph-broadcast"></i>From Twitch: <b>Elden Ring Nightreign</b>, title "blind first run, no spoilers pls"</div>
+          <div class="list" style="margin-top:8px">
+            <div class="rule"><span class="txt">No spoilers for Elden Ring Nightreign</span><span class="chip"><span class="sw" style="background:var(--del)"></span>Delete</span><i class="ph ph-x x"></i></div>
+            <div class="add"><div class="in">Add a rule for today</div><button class="b"><i class="ph ph-plus"></i>Add</button></div>
+          </div>
+        </div>
+        <div class="sec">
+          <h3>Blocked words <span>instant, no AI</span></h3>
+          <div class="list">
+            <div class="words"><span class="chip">strmboost</span><span class="chip">viewbot</span><span class="chip">cheap viewers</span><span class="chip">6 hidden slurs</span><span class="chip" style="color:var(--motwi);background:none"><i class="ph ph-plus"></i>Add</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="card">
+          <h3 style="font-size:13px;font-weight:600;margin-bottom:10px">How strict</h3>
+          <div class="seg"><div>Relaxed</div><div class="on">Standard</div><div>Strict</div></div>
+          <div class="scale"><div class="track"></div><span class="tk" style="left:60%">6</span><span class="tk" style="left:75%">7.5</span><span class="tk" style="left:90%">9</span></div>
+          <div class="legend-row"><span>Score 0 to 10</span><span>warn, timeout, ban</span></div>
+          <p class="sm" style="margin-top:10px">Repeat offenders step up: warn, 1 min, 10 min, ban request.</p>
+        </div>
+        <div class="card test">
+          <h3 style="font-size:13px;font-weight:600;margin-bottom:10px">Try a message</h3>
+          <div class="add" style="padding:0;border:0"><div class="in">does the guy with the mask betray you later</div></div>
+          <div class="result">
+            <div class="row"><span>Score</span><span class="mono">3.2</span></div>
+            <div class="row"><span>Would do</span><span>Nothing</span></div>
+            <div class="sm">A question, not a spoiler. Spoiler rule only covers revealing plot.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="caption">Stats</div>
+<div class="win">
+  <div class="titlebar"><span>Motwi</span><div class="dots"><i class="ph ph-minus"></i><i class="ph ph-square"></i><i class="ph ph-x"></i></div></div>
+  <aside class="rail">
+    <div class="brand"><div class="logo">M</div><b>Motwi</b></div>
+    <div class="nav"><i class="ph ph-house"></i>Overview</div>
+    <div class="nav"><i class="ph ph-scroll"></i>Rules</div>
+    <div class="nav"><i class="ph ph-clock-counter-clockwise"></i>History</div>
+    <div class="nav"><i class="ph ph-users"></i>People</div>
+    <div class="nav on"><i class="ph ph-chart-bar"></i>Stats</div>
+    <div class="nav"><i class="ph ph-shield-check"></i>Mods<span class="badge">2</span></div>
+    <div class="nav"><i class="ph ph-gear-six"></i>Settings</div>
+    <div class="status">
+      <div><span class="live" style="background:#5a5a64;box-shadow:none"></span>Offline, last stream 2h ago</div>
+      <div><i class="ph ph-cpu"></i>Gemini 2.5 Flash, backup OpenRouter</div>
+      <div><i class="ph ph-coins"></i><span class="mono">$0.31</span> this month</div>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="pagehead">
+      <div><h2>Stats</h2><p>What Motwi did and why. Sample data.</p></div>
+      <div class="tabs"><div>Last stream</div><div class="on">7 days</div><div>30 days</div></div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="l">Messages checked</div><div class="v">18,442</div><div class="d">across 5 streams</div></div>
+      <div class="kpi"><div class="l"><span class="sw" style="background:var(--del)"></span>Deleted</div><div class="v">137</div><div class="d">9 undone</div></div>
+      <div class="kpi"><div class="l"><span class="sw" style="background:var(--warn)"></span>Warned</div><div class="v">64</div><div class="d">2 undone</div></div>
+      <div class="kpi"><div class="l"><span class="sw" style="background:var(--timeout)"></span>Timeouts</div><div class="v">41</div><div class="d">3 undone</div></div>
+      <div class="kpi"><div class="l"><span class="sw" style="background:var(--ban)"></span>Bans</div><div class="v">6</div><div class="d">2 denied</div></div>
+    </div>
+    <div class="charts">
+      <div class="chart">
+        <h3>Actions per day</h3>
+        <div class="legend"><span><i style="background:var(--warn)"></i>Warned</span><span><i style="background:var(--ban)"></i>Bans</span><span><i style="background:var(--del)"></i>Deleted</span><span><i style="background:var(--timeout)"></i>Timeouts</span></div>
+        <div class="bars">
+          <div class="grid-lines"><div></div><div></div><div></div><div></div><div style="border-color:#3a3a42"></div></div>
+          <div class="ylab"><span>80</span><span>60</span><span>40</span><span>20</span><span>0</span></div>
+          <!-- heights in % of 60 -->
+          <div class="col" title="Tue 21: 12 warned, 1 ban, 26 deleted, 8 timeouts"><div class="area"><div class="stk" style="height:58.75%"><div style="height:16.5%;background:var(--timeout)"></div><div style="height:54.6%;background:var(--del)"></div><div style="height:2.4%;background:var(--ban)"></div><div style="height:24.5%;background:var(--warn)"></div></div></div><div class="xl">Tue</div></div>
+          <div class="col" title="Wed 22: no stream"><div class="area"><div class="stk" style="height:0"></div></div><div class="xl">Wed</div></div>
+          <div class="col" title="Thu 23: 9 warned, 0 bans, 21 deleted, 6 timeouts"><div class="area"><div class="stk" style="height:45%"><div style="height:16%;background:var(--timeout)"></div><div style="height:58%;background:var(--del)"></div><div style="height:26%;background:var(--warn)"></div></div></div><div class="xl">Thu</div></div>
+          <div class="col" title="Fri 24: 18 warned, 3 bans, 44 deleted, 14 timeouts (raid)"><div class="area"><div class="stk" style="height:98.75%"><div style="height:17.5%;background:var(--timeout)"></div><div style="height:55%;background:var(--del)"></div><div style="height:4.5%;background:var(--ban)"></div><div style="height:23%;background:var(--warn)"></div></div></div><div class="xl">Fri</div></div>
+          <div class="col" title="Sat 25: 11 warned, 1 ban, 23 deleted, 7 timeouts"><div class="area"><div class="stk" style="height:52.5%"><div style="height:16.5%;background:var(--timeout)"></div><div style="height:55%;background:var(--del)"></div><div style="height:2.5%;background:var(--ban)"></div><div style="height:26%;background:var(--warn)"></div></div></div><div class="xl">Sat</div></div>
+          <div class="col" title="Sun 26: no stream"><div class="area"><div class="stk" style="height:0"></div></div><div class="xl">Sun</div></div>
+          <div class="col" title="Mon 27: 14 warned, 1 ban, 23 deleted, 6 timeouts"><div class="area"><div class="stk" style="height:55%"><div style="height:13.5%;background:var(--timeout)"></div><div style="height:52.5%;background:var(--del)"></div><div style="height:2.5%;background:var(--ban)"></div><div style="height:31.5%;background:var(--warn)"></div></div></div><div class="xl">Mon</div></div>
+        </div>
+      </div>
+      <div class="chart">
+        <h3>What triggered them</h3>
+        <div class="sub">Share of all 248 actions</div>
+        <div class="hb">
+          <div class="row"><span>Spam filter</span><span class="n">92</span><div class="bar" style="width:100%"></div></div>
+          <div class="row"><span>No self-promo</span><span class="n">51</span><div class="bar" style="width:55%"></div></div>
+          <div class="row"><span>Roasting other chatters</span><span class="n">38</span><div class="bar" style="width:41%"></div></div>
+          <div class="row"><span>No spoilers (stream rule)</span><span class="n">29</span><div class="bar" style="width:32%"></div></div>
+          <div class="row"><span>Blocked words</span><span class="n">22</span><div class="bar" style="width:24%"></div></div>
+          <div class="row"><span>Hate speech</span><span class="n">16</span><div class="bar" style="width:17%"></div></div>
+        </div>
+        <div style="flex:1"></div>
+        <div class="foot"><span>AI cost, 7 days</span><span class="mono">$0.11</span></div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

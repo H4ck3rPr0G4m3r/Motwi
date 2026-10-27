@@ -25,3 +25,6 @@ extension/dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Brainstorm mockups
+.superpowers/

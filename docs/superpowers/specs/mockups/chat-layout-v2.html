@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Motwi in Twitch chat, combined</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page:#0b0b0d; --chat:#18181b; --chat-2:#1f1f23; --line:#2f2f35;
+    --text:#efeff1; --muted:#adadb8; --dim:#8a8a94;
+    --motwi:#4fd1b5; --motwi-ink:#06231d;
+    --ban:#f0505a; --timeout:#f59f45; --warn:#e8c547; --del:#8a8a94;
+    --r:6px;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--page);color:var(--text);font:14px/1.45 Inter,system-ui,sans-serif;padding:32px 28px 60px}
+  header{max-width:1180px;margin:0 auto 28px}
+  h1{font-size:22px;font-weight:600;letter-spacing:-.01em}
+  header p{color:var(--muted);margin-top:6px;max-width:72ch}
+  .grid{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:28px}
+  @media (max-width:1100px){.grid{grid-template-columns:1fr;max-width:380px}}
+  .col h2{font-size:15px;font-weight:600}
+  .col .desc{color:var(--muted);font-size:13px;margin:4px 0 12px;min-height:58px}
+
+  .chat{background:var(--chat);border:1px solid var(--line);border-radius:var(--r);height:660px;display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .chat-head{height:44px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);flex:none}
+  .msgs{flex:1;padding:6px 0;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}
+  .m{padding:4px 14px;font-size:13px}
+  .m.hl{background:#1c2422;box-shadow:inset 2px 0 0 var(--motwi)}
+  .u{font-weight:700}
+  .chat-input{flex:none;margin:10px;height:38px;border-radius:var(--r);background:var(--chat-2);border:1px solid var(--line);color:var(--dim);font-size:13px;display:flex;align-items:center;padding:0 12px}
+  .mono{font-family:"JetBrains Mono",monospace}
+
+  .bar{flex:none;height:40px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 12px;background:#141417}
+  .logo{width:20px;height:20px;border-radius:5px;background:var(--motwi);color:var(--motwi-ink);font:700 12px Inter;display:grid;place-items:center;flex:none}
+  .bar .st{font-size:12px;font-weight:600;line-height:1.2}
+  .bar .st small{display:block;font-weight:500;color:var(--dim);font-size:10.5px}
+  .bar .counts{margin-left:auto;display:flex;gap:10px;font:600 11.5px "JetBrains Mono",monospace;color:var(--muted)}
+  .sw{width:30px;height:16px;border-radius:8px;background:var(--motwi);position:relative;flex:none}
+  .sw::after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--motwi-ink)}
+  .sw.off{background:#3a3a42}.sw.off::after{right:auto;left:2px;background:#8a8a94}
+  .mode{font:600 10.5px Inter;color:var(--warn);background:#2a2618;border-radius:4px;padding:2px 6px}
+
+  .tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;background:#26262c;color:var(--muted)}
+  .tag .s{font-family:"JetBrains Mono",monospace}
+  .t-del{color:#c9c9d1}
+  .t-to{color:var(--timeout)}
+  .t-warn{color:var(--warn)}
+  .t-ban{color:var(--ban)}
+  .t-ok{color:var(--motwi)}
+  .undo,.lnk{font-size:11px;font-weight:600;color:var(--motwi);background:none;border:0;padding:2px 4px;cursor:pointer}
+  .gone{color:var(--dim);text-decoration:line-through;text-decoration-color:#5a5a64}
+  .note{display:flex;gap:8px;align-items:center;margin-top:3px;flex-wrap:wrap}
+  .why{color:var(--dim);font-size:11.5px}
+  .sug{display:flex;gap:6px;margin-top:5px}
+  .sbtn{height:24px;padding:0 9px;border-radius:4px;border:0;font:600 11px Inter;cursor:pointer;background:#2f2f35;color:var(--text)}
+  .sbtn.go{background:var(--timeout);color:#1f1205}
+
+  .req{position:absolute;left:10px;right:10px;top:92px;z-index:3;background:#221a1c;border:1px solid #4a2a2f;border-radius:var(--r);padding:10px 12px;box-shadow:0 14px 40px rgba(0,0,0,.6)}
+  .req-top{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:600;color:var(--ban);text-transform:uppercase;letter-spacing:.05em}
+  .req-msg{margin-top:6px;font-size:13px}
+  .req-why{margin-top:4px;font-size:12px;color:var(--muted)}
+  .req-act{display:flex;gap:8px;margin-top:10px}
+  .btn{flex:1;height:30px;border-radius:4px;border:0;font:600 12px Inter,sans-serif;cursor:pointer}
+  .btn-ban{background:var(--ban);color:#1a0507}
+  .btn-deny{background:#2f2f35;color:var(--text)}
+  .req-foot{margin-top:8px;font-size:11px;color:var(--dim);display:flex;justify-content:space-between}
+  .resolved{position:absolute;left:10px;right:10px;top:92px;z-index:3;background:#1a1f1e;border:1px solid #2c3d39;border-radius:var(--r);padding:9px 12px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center}
+  .warnbar{flex:none;background:#2a1d14;color:var(--timeout);font-size:11.5px;font-weight:600;padding:7px 12px;border-bottom:1px solid #4a3220}
+</style>
+</head>
+<body>
+<header>
+  <h1>Motwi in chat: inline marks, status bar, ban pop-up</h1>
+  <p>Your pick (A) with B's bar and ban pop-up. Three states of the same chat so you can see how it behaves. Things here are my guesses; tell me what is off.</p>
+</header>
+
+<div class="grid">
+
+  <!-- 1: acting normally, ban pending -->
+  <div class="col">
+    <h2>Live, with a ban waiting</h2>
+    <p class="desc">The offender is held in a short timeout the moment the ban is requested, so they cannot keep posting while you or a mod decide.</p>
+    <div class="chat">
+      <div class="chat-head">Stream chat</div>
+      <div class="bar">
+        <div class="logo">M</div>
+        <div class="st">Watching<small>Gemini 2.5 Flash</small></div>
+        <div class="counts"><span>2 del</span><span style="color:var(--timeout)">1 to</span></div>
+        <div class="sw" title="Motwi on"></div>
+      </div>
+      <div class="req">
+        <div class="req-top"><span>Ban request</span><span class="mono">9.4</span></div>
+        <div class="req-msg"><span class="u" style="color:#ff7a59">xx_v0id_xx</span>: go back to ████ you ████</div>
+        <div class="req-why">Slur aimed at the streamer. Community rule: zero tolerance for hate speech.</div>
+        <div class="req-act"><button class="btn btn-ban">Ban</button><button class="btn btn-deny">Deny</button></div>
+        <div class="req-foot"><span>Held in timeout while you decide</span><span>Brakkenhoff is looking</span></div>
+      </div>
+      <div class="msgs">
+        <div class="m"><span class="u" style="color:#1e90ff">kofi_draws</span>: that boss fight was insane KEKW</div>
+        <div class="m"><span class="u" style="color:#9acd32">Lumenwyrm</span>: is this the new patch?</div>
+        <div class="m">
+          <span class="gone"><span class="u">pixelbandit_</span>: the brother dies at the end of act 3 btw</span>
+          <div class="note"><span class="tag t-del">Deleted <span class="s">8.1</span></span><span class="why">Spoiler rule</span><button class="undo">Undo</button></div>
+        </div>
+        <div class="m"><span class="u" style="color:#ff69b4">SoftServeSam</span>: just dodge the slam lmao</div>
+        <div class="m">
+          <span class="gone"><span class="u">viewz4cheap</span>: best viewers + followers at strmboost .shop</span>
+          <div class="note"><span class="tag t-to">Timed out 10m</span><span class="why">Spam filter</span><button class="undo">Undo</button></div>
+        </div>
+        <div class="m"><span class="u" style="color:#daa520">nightowl_ttv</span>: chat be nice to the new guy</div>
+        <div class="m">
+          <span class="gone"><span class="u" style="color:#ff7a59">xx_v0id_xx</span>: go back to ████ you ████</span>
+          <div class="note"><span class="tag t-ban">Ban requested <span class="s">9.4</span></span></div>
+        </div>
+      </div>
+      <div class="chat-input">Send a message</div>
+    </div>
+  </div>
+
+  <!-- 2: resolved + undo + escalation -->
+  <div class="col">
+    <h2>After a mod handles it</h2>
+    <p class="desc">The pop-up shrinks to a one-line receipt for everyone, then fades. An undone action stays marked so you know it was reviewed. Repeat offenders show their step.</p>
+    <div class="chat">
+      <div class="chat-head">Stream chat</div>
+      <div class="bar">
+        <div class="logo">M</div>
+        <div class="st">Watching<small>Gemini 2.5 Flash</small></div>
+        <div class="counts"><span>2 del</span><span style="color:var(--timeout)">2 to</span><span style="color:var(--ban)">1 ban</span></div>
+        <div class="sw"></div>
+      </div>
+      <div class="resolved"><span><b>xx_v0id_xx</b> banned by Brakkenhoff</span><button class="lnk">Undo</button></div>
+      <div class="msgs">
+        <div class="m">
+          <span><span class="u">pixelbandit_</span>: the brother dies at the end of act 3 btw</span>
+          <div class="note"><span class="tag t-ok">Restored</span><span class="why">You undid a delete (spoiler rule)</span></div>
+        </div>
+        <div class="m"><span class="u" style="color:#ff69b4">SoftServeSam</span>: just dodge the slam lmao</div>
+        <div class="m">
+          <span class="gone"><span class="u" style="color:#8fbc8f">Grizzlecat</span>: ur actually so bad uninstall the game</span>
+          <div class="note"><span class="tag t-warn">Warned <span class="s">6.4</span></span><span class="why">Insulting the streamer</span><button class="undo">Undo</button></div>
+        </div>
+        <div class="m"><span class="u" style="color:#daa520">nightowl_ttv</span>: chat be nice to the new guy</div>
+        <div class="m"><span class="u" style="color:#1e90ff">mxzz</span>: W stream</div>
+        <div class="m">
+          <span class="gone"><span class="u" style="color:#8fbc8f">Grizzlecat</span>: no seriously ur trash at this</span>
+          <div class="note"><span class="tag t-to">Timed out 1m</span><span class="why">2nd offense this stream</span><button class="undo">Undo</button></div>
+        </div>
+        <div class="m"><span class="u" style="color:#9acd32">Lumenwyrm</span>: KEKW</div>
+      </div>
+      <div class="chat-input">Send a message</div>
+    </div>
+  </div>
+
+  <!-- 3: suggest-only + degraded -->
+  <div class="col">
+    <h2>Suggest-only mode, AI down</h2>
+    <p class="desc">Nothing happens without a click: suggestions show the action as buttons. If the AI stops answering, a warning says so while the spam filter and blocked words keep running.</p>
+    <div class="chat">
+      <div class="chat-head">Stream chat</div>
+      <div class="bar">
+        <div class="logo">M</div>
+        <div class="st">Suggesting<small>Gemini 2.5 Flash</small></div>
+        <span class="mode">Suggest only</span>
+        <div class="counts"><span>3 sugg</span></div>
+        <div class="sw"></div>
+      </div>
+      <div class="warnbar">AI not answering for 40s, switched to backup (OpenRouter). Spam filter still on.</div>
+      <div class="msgs">
+        <div class="m"><span class="u" style="color:#1e90ff">kofi_draws</span>: that boss fight was insane KEKW</div>
+        <div class="m hl">
+          <span><span class="u">pixelbandit_</span>: the brother dies at the end of act 3 btw</span>
+          <div class="note"><span class="tag t-del">Suggest delete <span class="s">8.1</span></span><span class="why">Spoiler rule</span></div>
+          <div class="sug"><button class="sbtn go" style="background:#c9c9d1">Delete</button><button class="sbtn">Ignore</button></div>
+        </div>
+        <div class="m"><span class="u" style="color:#ff69b4">SoftServeSam</span>: just dodge the slam lmao</div>
+        <div class="m hl">
+          <span><span class="u" style="color:#8fbc8f">Grizzlecat</span>: ur actually so bad uninstall the game</span>
+          <div class="note"><span class="tag t-to">Suggest timeout 1m <span class="s">7.6</span></span><span class="why">Insulting the streamer</span></div>
+          <div class="sug"><button class="sbtn go">Timeout</button><button class="sbtn">Warn instead</button><button class="sbtn">Ignore</button></div>
+        </div>
+        <div class="m"><span class="u" style="color:#daa520">nightowl_ttv</span>: chat be nice to the new guy</div>
+        <div class="m"><span class="u" style="color:#1e90ff">mxzz</span>: W stream</div>
+      </div>
+      <div class="chat-input">Send a message</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
