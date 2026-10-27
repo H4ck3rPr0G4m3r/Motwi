@@ -3,6 +3,7 @@
 from collections.abc import Awaitable
 
 from motwi.moderation import ExecutorError
+from motwi.twitch.auth import AuthExpired
 from motwi.twitch.helix import HelixClient, HelixError
 
 TEXT_LIMIT = 500
@@ -31,6 +32,8 @@ class HelixExecutor:
             if ok_if is not None and ok_if in e.message.lower():
                 return
             raise ExecutorError(str(e)) from e
+        except AuthExpired as e:
+            raise ExecutorError("Twitch sign-in expired; run `motwi login`") from e
 
     async def delete_message(self, message_id: str) -> None:
         await self._run(self._helix.delete_message(self._b, self._m, message_id), ok_404=True)
