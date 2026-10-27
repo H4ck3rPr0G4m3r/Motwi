@@ -1,7 +1,7 @@
 # Motwi design
 
 Date: 2026-10-27
-Status: draft, awaiting approval
+Status: reviewed, awaiting owner approval
 
 Motwi is a rewrite of the older Twitch-Ai-moderator (`../Twitch-Ai-moderator`). It keeps the core idea and redoes the system, the code, and the experience.
 
@@ -258,14 +258,23 @@ Every message that reaches the AI stage and cannot be scored is recorded as "unc
 
 ### 5.9 Mods' remote access
 
-- **Inviting a mod.** The streamer clicks "Invite a mod" on the Mods page. That creates a one-time invite link.
-- **Pairing.** The mod installs the extension and opens the link. Their extension pairs and gets its own revocable token.
+Mod access is the **last part of v1 to build**. Mods can always moderate through Twitch itself, so Motwi is fully useful without it.
+
+- **Inviting and verifying a mod.**
+  - The streamer clicks "Invite a mod" on the Mods page, which creates a one-time invite link.
+  - The mod installs the extension, opens the link, and signs in with Twitch in the extension.
+  - Motwi checks that this Twitch user really is a moderator of the channel, and re-checks periodically. A leaked link alone is useless.
+  - The paired extension gets its own revocable token. (builder's call, settled after review)
 - **What mods can do:** approve or deny ban requests, undo actions, and act on suggestions. Mods cannot change rules or settings in v1. (builder's call)
-- **Attribution.** Every action records who took it, and the reason sent to Twitch names them.
-- **Transport.** The streamer must not open ports, and there is no Motwi server.
-  - Proposed: a bundled `cloudflared` "quick tunnel". It needs no account and runs only while at least one mod is invited and Motwi is running.
+- **Attribution.** Every action records which mod took it, and the reason sent to Twitch names them.
+- **Transport (owner's decision: option A now, B possible later).**
+  - Motwi bundles `cloudflared` and runs a "quick tunnel". It needs no account, needs no open ports, and runs only while at least one mod is paired and Motwi is running.
   - All traffic through it is authenticated with per-mod tokens.
-- **Open question:** a quick tunnel's address changes every time Motwi restarts. See Open Questions.
+  - **The tunnel address changes every time Motwi restarts.** In v1:
+    - Mods' extensions detect that the old address is gone and show "Motwi moved, ask the streamer for the new link".
+    - Motwi shows the streamer a fresh link, one click to copy, to send to mods.
+    - Re-pairing with a fresh link must not require the mod to sign in with Twitch again.
+  - **Later option B, not in v1.** A tiny optional "phonebook" (for example a free Cloudflare Worker) that stores only each streamer's current encrypted address, so mods reconnect automatically. Keep the address lookup behind one small interface so B can be added without reworking pairing.
 
 ### 5.10 Post-stream recap
 
@@ -422,9 +431,10 @@ Carry the mockups' language through both front-ends.
 - **Extension.** An unlisted Chrome Web Store listing. The one-time developer fee and the listing are Peter's to set up. Until it exists, ship a zip with manual-install instructions.
 - **License.** Decided at open-source time. Not needed for v1.
 
-## 10. Open questions
+## 10. Owner to-dos
 
-1. **Mods' remote access address.** See 5.9. *(to confirm with owner)*
+- **Register the public Twitch app "Motwi"** on dev.twitch.tv: client type Public, with Device Code flow enabled. Until that exists, the client ID is configurable (dev setting / environment variable) so development can proceed. Development can use a mocked Twitch through the simulator.
+- **Chrome Web Store unlisted listing**, when ready to give the extension to friends.
 
 ## 11. Left to the builder
 
