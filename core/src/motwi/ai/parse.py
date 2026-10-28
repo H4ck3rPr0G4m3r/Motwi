@@ -42,6 +42,11 @@ def parse_verdicts(text: str, req: BuiltRequest) -> dict[str, Verdict]:
         if real_id is None or real_id in out:
             continue
         score = item.get("score")
+        if isinstance(score, str):  # some models quote numbers
+            try:
+                score = float(score)
+            except ValueError:
+                continue
         if isinstance(score, bool) or not isinstance(score, (int, float)) or math.isnan(score):
             continue
         rule = item.get("rule")

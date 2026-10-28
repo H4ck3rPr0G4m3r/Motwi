@@ -275,3 +275,12 @@ async def test_events_published_for_each_change(svc, bus):
         Status.DONE,
         Status.UNDONE,
     ]
+
+
+async def test_suggest_only_second_ban_request_merges(svc, ex, live):
+    set_settings(live, suggest_only=True)
+    first = await svc.apply(msg("first text", mid="m1"), BAN, ["ctx"])
+    second = await svc.apply(msg("second text", mid="m2"), BAN, [])
+    assert second.id == first.id and second.status is Status.SUGGESTED
+    assert second.context == ["ctx", "second text"]
+    assert ex.calls == []

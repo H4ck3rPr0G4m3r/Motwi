@@ -135,3 +135,20 @@ async def test_persists_across_reopen(tmp_path):
     s2 = await Store.open(path)
     assert (await s2.get_settings()).strictness == "strict"
     await s2.close()
+
+
+async def test_v1_database_upgrades_and_keeps_level(tmp_path):
+    import sqlite3
+
+    from motwi.store import MIGRATIONS
+
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(f"BEGIN;\n{MIGRATIONS[0]}\nPRAGMA user_version=1;\nCOMMIT;")
+    conn.close()
+    store = await Store.open(path)
+    try:
+        rec = await store.insert_action(make_new_action(level=3))
+        assert (await store.get_action(rec.id)).level == 3
+    finally:
+        await store.close()

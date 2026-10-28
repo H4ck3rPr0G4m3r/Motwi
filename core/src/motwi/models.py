@@ -1,7 +1,7 @@
 """Shared value types for the Motwi core engine.
 
-Everything here is immutable and free of I/O so that every other module
-can depend on it.
+Everything here is free of I/O so that every other module can depend on it.
+The dataclasses are frozen; module-level tables such as PRESETS must not be mutated.
 """
 
 from dataclasses import dataclass

@@ -4,7 +4,7 @@
 class OffenseTracker:
     def __init__(self, inactivity_reset_s: float = 43_200) -> None:
         self._reset_after = inactivity_reset_s
-        # user_id -> [(action_id, ladder_index, ts)], oldest first
+        # user_id -> [(action_id, level, ts)], oldest first; levels never decrease
         self._offenses: dict[str, list[tuple[int, int, float]]] = {}
 
     def _live(self, user_id: str, now: float) -> list[tuple[int, int, float]]:
@@ -23,8 +23,8 @@ class OffenseTracker:
     def count(self, user_id: str, now: float) -> int:
         return len(self._live(user_id, now))
 
-    def record(self, user_id: str, ladder_index: int, action_id: int, now: float) -> None:
-        self._offenses.setdefault(user_id, []).append((action_id, ladder_index, now))
+    def record(self, user_id: str, level: int, action_id: int, now: float) -> None:
+        self._offenses.setdefault(user_id, []).append((action_id, level, now))
 
     def undo(self, action_id: int) -> None:
         for user_id, entries in self._offenses.items():

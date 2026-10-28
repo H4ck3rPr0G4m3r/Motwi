@@ -79,8 +79,9 @@ class ModerationService:
         return self._publish(await self._store.update_action(action_id, **changes))
 
     def _record_offense(self, record: ActionRecord) -> None:
-        if record.ladder_index is not None:
-            self._offenses.record(record.user_id, record.ladder_index, record.id, self._clock())
+        level = record.level if record.level is not None else record.ladder_index
+        if level is not None:
+            self._offenses.record(record.user_id, level, record.id, self._clock())
 
     async def _load(self, action_id: int) -> ActionRecord:
         record = await self._store.get_action(action_id)
@@ -144,6 +145,7 @@ class ModerationService:
                 "delete": plan.delete,
                 "duration_s": plan.duration_s,
                 "ladder_index": plan.ladder_index,
+                "level": plan.level,
                 "status": status,
                 "actor": None,
                 "hold_applied": False,
@@ -153,6 +155,13 @@ class ModerationService:
             return NewAction(**fields)
 
         if self._live.settings.suggest_only:
+            if plan.kind is Kind.BAN_REQUEST:
+                # one open ban request per chatter, suggested or not: never a second pop-up
+                existing = await self._store.find_pending_ban(
+                    msg.user_id, (Status.SUGGESTED, Status.PENDING)
+                )
+                if existing is not None:
+                    return await self._update(existing.id, context=[*existing.context, msg.text])
             return self._publish(await self._store.insert_action(new(Status.SUGGESTED)))
 
         if plan.kind is Kind.BAN_REQUEST:

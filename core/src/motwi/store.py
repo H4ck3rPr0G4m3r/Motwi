@@ -89,6 +89,10 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_unchecked_ts ON unchecked(ts);
     """,
+    # escalation level earned by the offense, separate from the executed ladder step
+    """
+    ALTER TABLE actions ADD COLUMN level INTEGER;
+    """,
 ]
 
 
@@ -112,6 +116,7 @@ class NewAction:
     actor: str | None
     hold_applied: bool
     error: str | None
+    level: int | None = None
 
 
 @dataclass(frozen=True)
@@ -137,6 +142,7 @@ class ActionRecord:
     actor: str | None
     hold_applied: bool
     error: str | None
+    level: int | None = None
 
 
 @dataclass(frozen=True)
@@ -423,12 +429,15 @@ class Store:
         rows = await self._run(lambda c: c.execute(sql, [*params, limit]).fetchall())
         return [_action_from_row(r) for r in rows]
 
-    async def find_pending_ban(self, user_id: str) -> ActionRecord | None:
+    async def find_pending_ban(
+        self, user_id: str, statuses: tuple[Status, ...] = (Status.PENDING,)
+    ) -> ActionRecord | None:
+        marks = ", ".join("?" * len(statuses))
         row = await self._run(
             lambda c: c.execute(
                 f"SELECT {_SELECT_ACTION} FROM actions "
-                "WHERE user_id=? AND kind=? AND status=? ORDER BY id DESC LIMIT 1",
-                (user_id, Kind.BAN_REQUEST.value, Status.PENDING.value),
+                f"WHERE user_id=? AND kind=? AND status IN ({marks}) ORDER BY id DESC LIMIT 1",
+                (user_id, Kind.BAN_REQUEST.value, *(s.value for s in statuses)),
             ).fetchone()
         )
         return None if row is None else _action_from_row(row)
