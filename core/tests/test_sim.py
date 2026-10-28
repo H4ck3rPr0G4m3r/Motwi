@@ -83,9 +83,11 @@ def test_cli_help_exits_zero(capsys):
     assert "simulate" in capsys.readouterr().out
 
 
-def test_cli_without_subcommand_prints_help(capsys):
+def test_cli_without_subcommand_opens_the_app(monkeypatch):
+    opened = []
+    monkeypatch.setattr("motwi.desktop.run_app", lambda: opened.append(1) or 0)
     assert main([]) == 0
-    assert "simulate" in capsys.readouterr().out
+    assert opened == [1]
 
 
 def test_cli_simulate_runs(capsys):

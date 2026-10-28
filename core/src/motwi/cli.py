@@ -1,4 +1,4 @@
-"""Command line entry point: `motwi login | logout | set-key | run | simulate`."""
+"""Command line entry point: `motwi [app | login | logout | set-key | run | simulate]`."""
 
 import argparse
 import asyncio
@@ -14,8 +14,11 @@ log = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="motwi", description="Motwi: AI chat moderation.")
+    parser = argparse.ArgumentParser(
+        prog="motwi", description="Motwi: AI chat moderation. With no command, opens the app."
+    )
     sub = parser.add_subparsers(dest="command", metavar="command")
+    sub.add_parser("app", help="open the Motwi window (the default)")
 
     login = sub.add_parser("login", help="connect your Twitch account (or a bot account)")
     login.add_argument("--bot", action="store_true", help="connect a separate bot account")
@@ -109,9 +112,10 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command is None:
-        parser.print_help()
-        return 0
+    if args.command in (None, "app"):
+        from motwi.desktop import run_app
+
+        return run_app()
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
         reconfigure(encoding="utf-8", errors="replace")
