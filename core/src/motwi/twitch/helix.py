@@ -105,16 +105,24 @@ class HelixClient:
         data = await self._data("/streams", {"user_id": user_id})
         return data[0] if data else None
 
-    async def moderated_channels(self, user_id: str) -> list[dict]:
-        channels: list[dict] = []
+    async def _paged(self, path: str, params: dict[str, Any], limit: int = 1000) -> list[dict]:
+        items: list[dict] = []
         cursor: str | None = None
-        while True:
-            params = {"user_id": user_id, "first": 100, **({"after": cursor} if cursor else {})}
-            body = await self.request("GET", "/moderation/channels", params=params) or {}
-            channels += body.get("data", [])
+        while len(items) < limit:
+            page = {**params, "first": 100, **({"after": cursor} if cursor else {})}
+            body = await self.request("GET", path, params=page) or {}
+            items += body.get("data", [])
             cursor = (body.get("pagination") or {}).get("cursor")
             if not cursor:
-                return channels
+                break
+        return items[:limit]
+
+    async def moderated_channels(self, user_id: str) -> list[dict]:
+        return await self._paged("/moderation/channels", {"user_id": user_id})
+
+    async def banned_users(self, broadcaster_id: str) -> list[dict]:
+        """Banned and timed-out users. Twitch requires the broadcaster's own token."""
+        return await self._paged("/moderation/banned", {"broadcaster_id": broadcaster_id})
 
     # moderation
 

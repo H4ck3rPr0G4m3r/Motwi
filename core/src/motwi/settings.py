@@ -34,6 +34,7 @@ class Settings:
     hold_timeout_enabled: bool = True
     hold_timeout_s: int = 600
     warn_style: str = "twitch"
+    delete_on_warn: bool = True
     batch_max: int = 8
     batch_wait_s: float = 1.5
     ai_timeout_s: float = 8.0
@@ -42,6 +43,8 @@ class Settings:
     primary: ProviderConfig | None = None
     backup: ProviderConfig | None = None
     spam: SpamConfig = field(default_factory=SpamConfig)
+    setup_complete: bool = False
+    paused: bool = False
 
     def thresholds(self) -> Thresholds:
         if self.strictness == "custom":
@@ -68,6 +71,8 @@ class Settings:
             value = getattr(self, name)
             if not lo <= value <= hi:
                 raise ValueError(f"{name} must be between {lo} and {hi}, got {value}")
+        if self.warn_style not in ("twitch", "chat"):
+            raise ValueError(f"unknown warn_style: {self.warn_style!r}")
         if not self.ladder:
             raise ValueError("ladder must not be empty")
         for step in self.ladder:
