@@ -302,6 +302,10 @@ def _routes(motwi: Motwi, on_show: Callable[[], None] | None) -> web.RouteTableD
             raise KeyError(request.match_info["id"]) from e
         return ok(action_json(await motwi.act(action_id, verb)))
 
+    @r.get("/api/streams")
+    async def streams(_: web.Request) -> web.Response:
+        return ok(await motwi.store.list_streams(limit=50))
+
     # stats
 
     @r.get("/api/overview")
