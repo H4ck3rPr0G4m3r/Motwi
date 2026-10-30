@@ -814,8 +814,11 @@ class Motwi:
         since = None if stream_id else _midnight(0, now)
         counts = await self.store.action_counts(since=since, stream_id=stream_id)
         open_requests = await self.store.list_actions(
-            where=ActionFilter(kinds=(Kind.BAN_REQUEST,), statuses=OPEN_REQUEST), limit=50
-        )
+            where=ActionFilter(
+                kinds=(Kind.BAN_REQUEST,), statuses=OPEN_REQUEST, stream_id=stream_id, since=since
+            ),
+            limit=50,
+        
         warnings = await self._warnings(now)
         expired = sum(a.status is Status.EXPIRED for a in open_requests)
         if expired:
