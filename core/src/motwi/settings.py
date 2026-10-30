@@ -45,6 +45,7 @@ class Settings:
     spam: SpamConfig = field(default_factory=SpamConfig)
     setup_complete: bool = False
     paused: bool = False
+    check_updates: bool = True
 
     def thresholds(self) -> Thresholds:
         if self.strictness == "custom":

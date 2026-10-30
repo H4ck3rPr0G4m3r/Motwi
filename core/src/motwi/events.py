@@ -46,6 +46,13 @@ class ExtensionChanged:
     """A browser paired, connected, disconnected or was removed; re-read the list."""
 
 
+@dataclass(frozen=True)
+class RecapReady:
+    """A stream ended while Motwi watched, and its recap is saved."""
+
+    recap: dict
+
+
 Event = (
     ActionChanged
     | AIStateChanged
@@ -54,6 +61,7 @@ Event = (
     | StatusChanged
     | LoginFinished
     | ExtensionChanged
+    | RecapReady
 )
 
 

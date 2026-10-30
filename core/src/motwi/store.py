@@ -123,6 +123,18 @@ MIGRATIONS: list[str] = [
         last_seen REAL
     );
     """,
+    # recaps, kept as snapshots, and spans when the AI was down or on its backup
+    """
+    ALTER TABLE streams ADD COLUMN recap TEXT;
+    CREATE TABLE ai_outages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        state TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        started_at REAL NOT NULL,
+        ended_at REAL
+    );
+    CREATE INDEX idx_outages_started ON ai_outages(started_at);
+    """,
 ]
 
 # what a stats total counts: everything except suggestions nobody took
@@ -725,6 +737,102 @@ class Store:
         )
         return [StreamRecord(*r) for r in rows]
 
+    async def get_stream(self, stream_id: str) -> StreamRecord | None:
+        row = await self._run(
+            lambda c: c.execute(
+                "SELECT id, started_at, ended_at, title, game FROM streams WHERE id=?",
+                (stream_id,),
+            ).fetchone()
+        )
+        return None if row is None else StreamRecord(*row)
+
+    async def open_streams(self) -> list[StreamRecord]:
+        rows = await self._run(
+            lambda c: c.execute(
+                "SELECT id, started_at, ended_at, title, game FROM streams "
+                "WHERE ended_at IS NULL ORDER BY started_at"
+            ).fetchall()
+        )
+        return [StreamRecord(*r) for r in rows]
+
+    async def last_activity(self, stream_id: str) -> float | None:
+        """When Motwi last acted during this stream."""
+        row = await self._run(
+            lambda c: c.execute(
+                "SELECT MAX(created_at) FROM actions WHERE stream_id=?", (stream_id,)
+            ).fetchone()
+        )
+        return row[0]
+
+    # recaps
+
+    async def save_recap(self, stream_id: str, recap: dict) -> None:
+        payload = json.dumps(recap)
+        await self._write(
+            lambda c: c.execute("UPDATE streams SET recap=? WHERE id=?", (payload, stream_id))
+        )
+
+    async def last_recap(self) -> dict | None:
+        row = await self._run(
+            lambda c: c.execute(
+                "SELECT recap FROM streams WHERE recap IS NOT NULL ORDER BY ended_at DESC LIMIT 1"
+            ).fetchone()
+        )
+        return None if row is None else json.loads(row[0])
+
+    async def top_offenders(self, stream_id: str, limit: int = 5) -> list[dict]:
+        """Chatters who escalated furthest: more than one offense, or past the first step.
+
+        With a single MAX(), SQLite takes the other bare columns from that row, so `kind`
+        and `duration_s` describe the furthest action.
+        """
+        rows = await self._run(
+            lambda c: c.execute(
+                "SELECT user_login, COUNT(*), MAX(COALESCE(level, ladder_index, 0)) AS top, "
+                "kind, duration_s FROM actions "
+                "WHERE stream_id=? AND status IN ('done', 'pending', 'expired') "
+                "GROUP BY user_id HAVING COUNT(*) > 1 OR top > 0 "
+                "ORDER BY top DESC, COUNT(*) DESC, user_login LIMIT ?",
+                (stream_id, limit),
+            ).fetchall()
+        )
+        return [{"login": r[0], "actions": r[1], "kind": r[3], "duration_s": r[4]} for r in rows]
+
+    # AI outages
+
+    async def ai_state_changed(self, state: str, detail: str, ts: float) -> None:
+        """Closes any open outage, and opens a new one unless the AI is healthy."""
+
+        def work(c: sqlite3.Connection) -> None:
+            c.execute("UPDATE ai_outages SET ended_at=? WHERE ended_at IS NULL", (ts,))
+            if state in ("down", "degraded"):
+                c.execute(
+                    "INSERT INTO ai_outages(state, detail, started_at) VALUES (?, ?, ?)",
+                    (state, detail, ts),
+                )
+
+        await self._write(work)
+
+    async def outages_between(self, start: float, end: float) -> list[dict]:
+        """Outages overlapping this span, clipped to it."""
+        rows = await self._run(
+            lambda c: c.execute(
+                "SELECT state, detail, started_at, ended_at FROM ai_outages "
+                "WHERE started_at < ? AND (ended_at IS NULL OR ended_at > ?) "
+                "ORDER BY started_at",
+                (end, start),
+            ).fetchall()
+        )
+        return [
+            {
+                "state": r[0],
+                "detail": r[1],
+                "started_at": max(r[2], start),
+                "ended_at": end if r[3] is None else min(r[3], end),
+            }
+            for r in rows
+        ]
+
     # checked-message counts
 
     async def add_checked(self, counts: dict[tuple[str, str | None], int]) -> None:
@@ -770,8 +878,15 @@ class Store:
             )
         )
 
-    async def count_unchecked(self, since: float | None = None) -> int:
-        where, params = ("WHERE ts >= ?", (since,)) if since is not None else ("", ())
+    async def count_unchecked(self, since: float | None = None, until: float | None = None) -> int:
+        conds, params = [], []
+        if since is not None:
+            conds.append("ts >= ?")
+            params.append(since)
+        if until is not None:
+            conds.append("ts <= ?")
+            params.append(until)
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
         row = await self._run(
             lambda c: c.execute(f"SELECT COUNT(*) FROM unchecked {where}", params).fetchone()
         )
@@ -785,6 +900,15 @@ class Store:
             u = c.execute("DELETE FROM unchecked WHERE ts < ?", (older_than_ts,)).rowcount
             day = time.strftime("%Y-%m-%d", time.localtime(older_than_ts))
             n = c.execute("DELETE FROM message_counts WHERE day < ?", (day,)).rowcount
-            return a + u + n
+            o = c.execute(
+                "DELETE FROM ai_outages WHERE ended_at IS NOT NULL AND ended_at < ?",
+                (older_than_ts,),
+            ).rowcount
+            # recaps name chatters, so they go when the actions they summarize do
+            r = c.execute(
+                "UPDATE streams SET recap=NULL WHERE recap IS NOT NULL AND ended_at < ?",
+                (older_than_ts,),
+            ).rowcount
+            return a + u + n + o + r
 
         return await self._write(work)

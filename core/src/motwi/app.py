@@ -19,6 +19,7 @@ from motwi.events import (
     AIStateChanged,
     BanRequestReminder,
     EventBus,
+    RecapReady,
     StreamChanged,
 )
 from motwi.filters.spam import SpamFilter
@@ -26,6 +27,7 @@ from motwi.live import LiveConfig
 from motwi.models import ChatMessage, StreamContext
 from motwi.moderation import Executor, ModerationService
 from motwi.pipeline import Pipeline
+from motwi.recap import recap_summary
 from motwi.settings import ProviderConfig, Settings
 from motwi.sim.printer import format_action
 from motwi.starter import STARTER_RULES
@@ -123,8 +125,10 @@ class MotwiApp:
         self_user_ids: set[str],
         clock: Callable[[], float] = time.time,
         bus: EventBus | None = None,
+        on_stream_end: Callable[[str, float], Awaitable[None]] | None = None,
     ) -> None:
         self.store = store
+        self._on_stream_end = on_stream_end or store.stream_ended
         self.live = live
         self.bus = bus or EventBus()
         self.offenses = OffenseTracker()
@@ -187,6 +191,9 @@ class MotwiApp:
             )
         elif sub_type == "stream.online":
             stream_id = event.get("id")
+            if stream.stream_id and stream.stream_id != stream_id:
+                # the old stream's offline event never came
+                self._spawn(self._on_stream_end(stream.stream_id, now), "stream end")
             self.live.stream = replace(stream, stream_id=stream_id)
             self.pipeline.reset_stream()
             if stream_id:
@@ -199,7 +206,7 @@ class MotwiApp:
             self.live.stream = replace(stream, stream_id=None)
             self.pipeline.reset_stream()  # offenses reset when the stream ends (spec 5.3)
             if stream.stream_id:
-                self._spawn(self.store.stream_ended(stream.stream_id, now), "stream end")
+                self._spawn(self._on_stream_end(stream.stream_id, now), "stream end")
         else:
             return
         self.bus.publish(StreamChanged(self.live.stream))
@@ -263,6 +270,8 @@ async def print_events(bus: EventBus, out: TextIO) -> None:
                 print(f"#{a.id} {format_action(a)} -> {a.status.value}{actor}{error}", file=out)
             elif isinstance(e, AIStateChanged):
                 print(f"[ai {e.state}] {e.detail}", file=out)
+            elif isinstance(e, RecapReady):
+                print(f"[recap] {recap_summary(e.recap)}", file=out)
             elif isinstance(e, BanRequestReminder):
                 print(
                     f"[reminder] ban request #{e.action.id} for {e.action.user_login} expired "
