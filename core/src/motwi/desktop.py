@@ -90,6 +90,28 @@ def icon_image(state: str = "watching", size: int = 64):
     return img
 
 
+ICO_SIZES = [(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 64), (256, 256)]
+APP_ID = "H4ck3rPr0G4m3r.Motwi"
+
+
+def icon_file() -> str:
+    """Motwi's window and taskbar icon as a multi-size .ico in the data folder."""
+    path = data_dir() / "motwi.ico"
+    icon_image("watching", 256).save(path, sizes=ICO_SIZES)
+    return str(path)
+
+
+def set_app_id() -> None:
+    """Give Motwi its own taskbar identity, so Windows shows its icon instead of Python's."""
+    if sys.platform == "win32":
+        import ctypes
+
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+        except (AttributeError, OSError):
+            log.debug("could not set the app id", exc_info=True)
+
+
 class Core:
     """The service, the API and the Twitch session, on their own event loop thread."""
 
@@ -224,6 +246,7 @@ def run_app() -> int:
 
     import webview
 
+    set_app_id()
     window_ref: dict[str, Any] = {}
     quitting = threading.Event()
     hinted = threading.Event()
@@ -283,14 +306,14 @@ def run_app() -> int:
         window.hide()
         if not hinted.is_set():
             hinted.set()
-            tray.notify("Motwi is still watching chat. Quit from the tray icon.")
+            tray.notify("Motwi is still watching chat. Its icon is in the tray, under the ^ arrow.")
         return False
 
     window.events.closing += on_closing
     webview.start(
         private_mode=True,
         storage_path=str(data_dir() / "webview"),
-        icon=None,
+        icon=icon_file(),
     )
     if not quitting.is_set():  # the window went away some other way
         quitting.set()

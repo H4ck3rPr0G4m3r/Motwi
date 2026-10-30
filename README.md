@@ -13,7 +13,7 @@ cd ui && npm ci && npm run build
 cd ../core && uv sync && uv run motwi
 ```
 
-A window opens with the first-run setup: connect Twitch, pick an AI provider and paste its key, then review the starter rules. Closing the window keeps Motwi running in the tray. Quit it from the tray icon. Data lives in `%APPDATA%\Motwi`, and keys and Twitch tokens are kept in Windows Credential Manager.
+A window opens with the first-run setup: connect Twitch, pick an AI provider and paste its key, then review the starter rules. Closing the window keeps Motwi running in the tray. Windows 11 puts new tray icons under the `^` arrow; drag it out to keep it visible. Quit Motwi from that icon. Data lives in `%APPDATA%\Motwi`, and keys and Twitch tokens are kept in Windows Credential Manager.
 
 Other commands: `motwi run` moderates headless in the terminal, and `motwi login`, `motwi logout` and `motwi set-key` manage accounts and keys from the command line.
 
