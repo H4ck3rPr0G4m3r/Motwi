@@ -92,7 +92,8 @@
     <div class="group">
       <h3>Escalated furthest</h3>
       <ul>
-        {#each recap.escalated as c (c.login)}
+        <!-- by position: a saved recap can hold one login twice, if a chatter renamed -->
+        {#each recap.escalated as c, i (i)}
           <li class="row">
             <span class="grow"><b>{c.login}</b> reached {furthest(c.kind, c.duration_s)}</span>
             <span class="mono">{c.actions}x</span>
