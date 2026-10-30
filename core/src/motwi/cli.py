@@ -18,7 +18,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="motwi", description="Motwi: AI chat moderation. With no command, opens the app."
     )
     sub = parser.add_subparsers(dest="command", metavar="command")
-    sub.add_parser("app", help="open the Motwi window (the default)")
+    app = sub.add_parser("app", help="open the Motwi window (the default)")
+    app.add_argument("--background", action="store_true", help="start in the tray, no window")
 
     login = sub.add_parser("login", help="connect your Twitch account (or a bot account)")
     login.add_argument("--bot", action="store_true", help="connect a separate bot account")
@@ -115,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in (None, "app"):
         from motwi.desktop import run_app
 
-        return run_app()
+        return run_app(background=getattr(args, "background", False))
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if reconfigure is not None:
         reconfigure(encoding="utf-8", errors="replace")

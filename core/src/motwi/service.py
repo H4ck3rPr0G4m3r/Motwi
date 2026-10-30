@@ -26,12 +26,14 @@ from motwi.events import (
     AIStateChanged,
     EventBus,
     LoginFinished,
+    RecapReady,
     StatusChanged,
     StreamChanged,
 )
 from motwi.live import LiveConfig
 from motwi.models import Ceiling, ChatMessage, Kind, Rule, Source, Status, Unchecked
 from motwi.moderation import AlreadyResolved, ExecutorError
+from motwi.recap import build_recap, kind_totals, trigger_label
 from motwi.settings import ProviderConfig, Settings
 from motwi.store import ActionFilter, ActionRecord, Store
 from motwi.twitch import BOT_SCOPES, SCOPES, client_id
@@ -48,6 +50,7 @@ from motwi.twitch.eventsub import EventSubClient, Socket
 from motwi.twitch.executor import HelixExecutor
 from motwi.twitch.helix import HelixClient, HelixError
 from motwi.twitch.tokens import Role, SecretStore, TokenStore, ai_key_name
+from motwi.updates import UpdateError, fetch_latest, is_newer, update_url
 
 log = logging.getLogger(__name__)
 
@@ -68,9 +71,12 @@ EDITABLE_SETTINGS = {
     "delete_on_warn",
     "retention_days",
     "setup_complete",
+    "check_updates",
 }
 OPEN_REQUEST = (Status.PENDING, Status.EXPIRED)
 CHAT_RECENT = 100
+UPDATE_FIRST_CHECK_S = 60
+UPDATE_EVERY_S = 86_400
 
 
 class NotConnected(Exception):
@@ -155,6 +161,14 @@ class Motwi:
         self._twitch: tuple[TwitchState, str] = ("idle", "")
         self._ai_state: tuple[str, str] = ("ok", "")
         self._persisted = Settings()
+        self._update: dict[str, Any] = {
+            "state": "idle",
+            "latest": None,
+            "url": None,
+            "notes": "",
+            "detail": "",
+            "checked_at": None,
+        }
 
     @classmethod
     async def open(cls, store: Store, **kwargs: Any) -> "Motwi":
@@ -288,6 +302,11 @@ class Motwi:
             },
             "month_cost": cost,
             "open_requests": len(open_requests),
+            "update": {
+                "available": self._update["state"] == "available",
+                "version": self._update["latest"],
+                "url": self._update["url"],
+            },
         }
 
     # Twitch session
@@ -374,6 +393,7 @@ class Motwi:
                 self.live.stream.title,
                 self.live.stream.game,
             )
+        await self._finish_unseen_streams(live_stream.get("id") if live_stream else None)
         self.bus.publish(StreamChanged(self.live.stream))
 
         expired = asyncio.Event()
@@ -386,11 +406,13 @@ class Motwi:
             self_user_ids={mod_auth.token.user_id},
             clock=self._clock,
             bus=self.bus,
+            on_stream_end=self._finish_stream,
         )
         self._session = _Session(
             helix, channel_helix, executor, app, broadcaster_id, mod_auth.token.login
         )
         self._ai_state = ("ok", "")
+        await self.store.ai_state_changed("ok", "", self._clock())  # a crash can leave one open
         ai_watch = asyncio.create_task(self._watch_ai())
 
         async def subscribe(session_id: str) -> None:
@@ -429,6 +451,7 @@ class Motwi:
                 t.cancel()
             await asyncio.gather(*tasks, ai_watch, return_exceptions=True)
             await app.aclose()
+            await self.store.ai_state_changed("ok", "", self._clock())
 
     async def _watch_ai(self) -> None:
         q = self.bus.subscribe()
@@ -437,9 +460,43 @@ class Motwi:
                 e = await q.get()
                 if isinstance(e, AIStateChanged):
                     self._ai_state = (e.state, e.detail)
+                    await self.store.ai_state_changed(e.state, e.detail, self._clock())
                     self.bus.publish(StatusChanged())
         finally:
             self.bus.unsubscribe(q)
+
+    # the end of a stream
+
+    async def _finish_stream(
+        self, stream_id: str, ended_at: float, *, seen_ending: bool = True
+    ) -> None:
+        """Save the recap and clear this-stream rules (spec 5.10). The rules go even if the
+        recap fails, since they were only meant for that stream."""
+        await self.store.stream_ended(stream_id, ended_at)
+        recap = None
+        try:
+            if self._session is not None:
+                await self._session.app.flush_counts()
+            stream = await self.store.get_stream(stream_id)
+            if stream is not None:
+                recap = await build_recap(self.store, stream, seen_ending=seen_ending)
+                await self.store.save_recap(stream_id, recap)
+        except Exception:
+            log.exception("could not build the recap for stream %s", stream_id)
+        if await self.store.clear_stream_rules():
+            await self.reload()
+        if recap is not None and seen_ending:
+            self.bus.publish(RecapReady(recap))
+
+    async def _finish_unseen_streams(self, current_id: str | None) -> None:
+        """Streams that ended while Motwi wasn't running. They end at their last known
+        activity, since nothing better was recorded."""
+        for stream in await self.store.open_streams():
+            if stream.id != current_id:
+                last = await self.store.last_activity(stream.id)
+                await self._finish_stream(
+                    stream.id, last if last is not None else stream.started_at, seen_ending=False
+                )
 
     def _require_session(self) -> _Session:
         if self._session is None:
@@ -651,6 +708,54 @@ class Motwi:
     ) -> list[ActionRecord]:
         return await self.store.list_actions(where=f, before_id=before, limit=limit)
 
+    # updates
+
+    def update_view(self) -> dict:
+        return dict(self._update)
+
+    async def check_update(self) -> dict:
+        url = update_url(self._env)
+        now = self._clock()
+        if url is None:
+            self._update = {**self._update, "state": "off", "detail": ""}
+            return self.update_view()
+        try:
+            release = await fetch_latest(self._http, url, __version__)
+        except UpdateError as e:
+            # says nothing about whether an update exists; keep any offer already made
+            self._update = {**self._update, "detail": str(e), "checked_at": now}
+            if self._update["state"] != "available":
+                self._update["state"] = "failed"
+            return self.update_view()
+        if release is None:
+            state, latest, link, notes = "unpublished", None, None, ""
+        elif is_newer(release, __version__):
+            state, latest, link, notes = "available", release.version, release.url, release.notes
+        else:
+            state, latest, link, notes = "current", release.version, None, ""
+        self._update = {
+            "state": state,
+            "latest": latest,
+            "url": link,
+            "notes": notes,
+            "detail": "",
+            "checked_at": now,
+        }
+        self.bus.publish(StatusChanged())
+        return self.update_view()
+
+    async def update_loop(
+        self, *, sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
+    ) -> None:
+        await sleep(UPDATE_FIRST_CHECK_S)
+        while True:
+            if self.live.settings.check_updates:
+                try:
+                    await self.check_update()
+                except Exception:
+                    log.exception("update check failed")
+            await sleep(UPDATE_EVERY_S)
+
     # AI providers
 
     def ai_config(self) -> dict:
@@ -797,7 +902,7 @@ class Motwi:
         return {
             "today": {
                 "checked": await self.store.count_checked(since_day=_day(now)),
-                "actions": _kind_totals(counts),
+                "actions": kind_totals(counts),
                 "cost": (await self.store.usage_totals(since=today)).cost_usd,
                 "unchecked": await self.store.count_unchecked(since=today),
             },
@@ -805,6 +910,7 @@ class Motwi:
             "recent": recent,
             "warnings": await self._warnings(now),
             "last_stream": _stream_view(next(iter(await self.store.list_streams(limit=1)), None)),
+            "last_recap": await self.store.last_recap(),
         }
 
     async def chat_view(self) -> dict:
@@ -814,12 +920,10 @@ class Motwi:
         since = None if stream_id else _midnight(0, now)
         counts = await self.store.action_counts(since=since, stream_id=stream_id)
         open_requests = await self.store.list_actions(
-            where=ActionFilter(
-                kinds=(Kind.BAN_REQUEST,), statuses=OPEN_REQUEST, stream_id=stream_id, since=since
-            ),
-            limit=50,
-        
-        warnings = await self._warnings(now)
+            where=ActionFilter(kinds=(Kind.BAN_REQUEST,), statuses=OPEN_REQUEST), limit=50
+        )
+        # no update nags in chat: it's for the app window, not for mid-stream
+        warnings = [w for w in await self._warnings(now) if w["kind"] != "update"]
         expired = sum(a.status is Status.EXPIRED for a in open_requests)
         if expired:
             word = "request is" if expired == 1 else "requests are"
@@ -869,6 +973,15 @@ class Motwi:
                     "text": f"{overload} messages in the last 10 minutes could not be checked.",
                 }
             )
+        if self._update["state"] == "available":
+            out.append(
+                {
+                    "kind": "update",
+                    "level": "info",
+                    "text": f"Motwi {self._update['latest']} is available.",
+                    "url": self._update["url"],
+                }
+            )
         return out
 
     async def stats(self, range_: str) -> dict:
@@ -899,7 +1012,7 @@ class Motwi:
         rules = {r.id: r for r in await self.store.list_rules()}
         triggers: dict[str, int] = {}
         for source, rule_id, n in await self.store.triggers(since=since, stream_id=stream_id):
-            label = _trigger_label(source, rule_id, rules)
+            label = trigger_label(source, rule_id, rules)
             triggers[label] = triggers.get(label, 0) + n
         if since is not None:
             checked = await self.store.count_checked(since_day=_day(since))
@@ -914,7 +1027,7 @@ class Motwi:
             "stream": _stream_view(stream),
             "checked": checked,
             "streams": streams,
-            "totals": _kind_totals(counts),
+            "totals": kind_totals(counts),
             "per_day": [{"day": d, **v} for d, v in per_day.items()],
             "triggers": sorted(
                 ({"label": k, "count": v} for k, v in triggers.items()), key=lambda t: -t["count"]
@@ -952,39 +1065,9 @@ def _provider_config(provider: str, model: str | None, base_url: str | None) -> 
     return ProviderConfig(provider, model, base_url)  # type: ignore[arg-type]
 
 
-def _kind_totals(counts: Mapping[tuple[Kind, Status], int]) -> dict[str, dict[str, int]]:
-    counted = {
-        Status.PENDING,
-        Status.DONE,
-        Status.FAILED,
-        Status.UNDONE,
-        Status.DENIED,
-        Status.EXPIRED,
-    }
-    out = {
-        k: {"count": 0, "undone": 0, "denied": 0, "failed": 0, "suggested": 0}
-        for k in ("delete", "warn", "timeout", "ban_request")
-    }
-    for (kind, status), n in counts.items():
-        row = out.get(kind.value)
-        if row is None:
-            continue
-        if status in counted:
-            row["count"] += n
-        if status is Status.UNDONE:
-            row["undone"] += n
-        elif status is Status.DENIED:
-            row["denied"] += n
-        elif status is Status.FAILED:
-            row["failed"] += n
-        elif status is Status.SUGGESTED:
-            row["suggested"] += n
-    return out
-
-
 def _live_counts(counts: Mapping[tuple[Kind, Status], int]) -> dict[str, int]:
     """Actions that stand right now, for the in-chat bar: no undone, denied or failed ones."""
-    totals = _kind_totals(counts)
+    totals = kind_totals(counts)
 
     def standing(kind: str) -> int:
         t = totals[kind]
@@ -997,19 +1080,6 @@ def _live_counts(counts: Mapping[tuple[Kind, Status], int]) -> dict[str, int]:
         "ban": standing("ban_request"),
         "suggested": sum(t["suggested"] for t in totals.values()),
     }
-
-
-def _trigger_label(source: Source, rule_id: str | None, rules: Mapping[str, Rule]) -> str:
-    if source is Source.SPAM:
-        return "Spam filter"
-    if source is Source.BLOCKED_WORD:
-        return "Blocked words"
-    if rule_id is None:
-        return "No specific rule"
-    rule = rules.get(rule_id)
-    if rule is None:
-        return "A deleted rule"
-    return f"{rule.text} (stream rule)" if rule.scope == "stream" else rule.text
 
 
 def _stream_view(s) -> dict | None:

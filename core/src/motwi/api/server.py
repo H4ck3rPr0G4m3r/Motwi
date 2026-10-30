@@ -28,12 +28,14 @@ from aiohttp import WSMsgType, web
 
 from motwi import __version__
 from motwi.api.pairing import CODE_TTL_S, Pairing, PairingError
+from motwi.autostart import AutoStart
 from motwi.events import (
     ActionChanged,
     AIStateChanged,
     BanRequestReminder,
     ExtensionChanged,
     LoginFinished,
+    RecapReady,
     StatusChanged,
     StreamChanged,
 )
@@ -52,7 +54,7 @@ HELLO_TIMEOUT_S = 5.0
 STATUS_DEBOUNCE_S = 0.2
 
 EXTENSION_ORIGIN = "chrome-extension://"
-PUBLIC_PATHS = ("/api/ping", "/api/show", "/api/events", "/api/pair")
+PUBLIC_PATHS = ("/api/ping", "/api/show", "/api/quit", "/api/events", "/api/pair")
 # everything a paired extension may call; the rest of the API is the window's alone
 EXTENSION_ROUTES = (
     ("GET", re.compile(r"/api/status")),
@@ -81,6 +83,7 @@ class ApiAuth:
 MOTWI = web.AppKey("motwi", Motwi)
 AUTH = web.AppKey("auth", ApiAuth)
 PAIRING = web.AppKey("pairing", Pairing)
+SOCKETS = web.AppKey("sockets", set)
 ORIGINS = web.AppKey("origins", set)
 
 
@@ -218,6 +221,8 @@ def _routes(
     *,
     port: int,
     on_show: Callable[[], None] | None,
+    on_quit: Callable[[], None] | None,
+    autostart: AutoStart,
     open_url: Callable[[str], Any],
     reveal: Callable[[Path], Any],
     extension_dir: Path,
@@ -237,6 +242,41 @@ def _routes(
         if on_show is not None:
             on_show()
         return ok()
+
+    @r.post("/api/quit")
+    async def quit_app(request: web.Request) -> web.Response:
+        # the installer asking a running Motwi to stop; same guard as /api/show
+        if request.headers.get("X-Motwi") != "1":
+            return _error(403, "forbidden")
+        if on_quit is None:
+            return _error(409, "this Motwi can't be stopped from here")
+        on_quit()
+        return ok()
+
+    @r.get("/api/app")
+    async def app_info(_: web.Request) -> web.Response:
+        return ok(
+            {
+                "version": __version__,
+                "autostart": {"available": autostart.available, "enabled": autostart.enabled},
+                "update": motwi.update_view(),
+            }
+        )
+
+    @r.put("/api/app/autostart")
+    async def set_autostart(request: web.Request) -> web.Response:
+        enabled = (await _body(request)).get("enabled")
+        if not isinstance(enabled, bool):
+            raise FieldError("enabled", "enabled must be true or false.")
+        try:
+            autostart.set_enabled(enabled)
+        except (ValueError, OSError) as e:
+            raise FieldError("enabled", str(e)) from e
+        return ok({"available": autostart.available, "enabled": autostart.enabled})
+
+    @r.post("/api/app/check-update")
+    async def check_update(_: web.Request) -> web.Response:
+        return ok(await motwi.check_update())
 
     @r.get("/api/status")
     async def status(_: web.Request) -> web.Response:
@@ -569,7 +609,10 @@ async def _events(request: web.Request) -> web.StreamResponse:
             await ws.close(code=4401, message=b"not signed in to Motwi")
             return ws
         await pairing.attach(client_id, ws)
+    log.info("event socket opened (%s)", "window" if client_id is None else "extension")
 
+    sockets = request.app[SOCKETS]
+    sockets.add(ws)
     q = motwi.bus.subscribe()
     await ws.send_str(_dumps({"type": "hello", "status": await motwi.status()}))
     dirty = asyncio.Event()
@@ -601,7 +644,7 @@ async def _events(request: web.Request) -> web.StreamResponse:
                         }
                     )
                 )
-            elif isinstance(e, (StatusChanged, AIStateChanged, StreamChanged)):
+            elif isinstance(e, (StatusChanged, AIStateChanged, StreamChanged, RecapReady)):
                 dirty.set()
             elif isinstance(e, ExtensionChanged) and client_id is None:
                 await ws.send_str(_dumps({"type": "extension"}))
@@ -618,6 +661,7 @@ async def _events(request: web.Request) -> web.StreamResponse:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         motwi.bus.unsubscribe(q)
+        sockets.discard(ws)
         if client_id is not None:
             pairing.detach(client_id, ws)
         await ws.close()
@@ -634,6 +678,8 @@ def create_app(
     port: int = DEFAULT_PORT,
     ui_dir: Path | None = None,
     on_show: Callable[[], None] | None = None,
+    on_quit: Callable[[], None] | None = None,
+    autostart: AutoStart | None = None,
     open_url: Callable[[str], Any] = webbrowser.open,
     reveal: Callable[[Path], Any] = _reveal_folder,
     extension_dir: Path | None = None,
@@ -644,17 +690,26 @@ def create_app(
     app[AUTH] = auth
     app[PAIRING] = pairing
     app[ORIGINS] = _allowed_origins(port)
+    app[SOCKETS] = set()
 
     async def load_pairing(_: web.Application) -> None:
         await pairing.load()
 
+    async def close_sockets(a: web.Application) -> None:
+        # otherwise shutdown waits on them, and quitting looks like a hang
+        for ws in list(a[SOCKETS]):
+            await ws.close(code=1001, message=b"Motwi is shutting down")
+
     app.on_startup.append(load_pairing)
+    app.on_shutdown.append(close_sockets)
     app.add_routes(
         _routes(
             motwi,
             pairing,
             port=port,
             on_show=on_show,
+            on_quit=on_quit,
+            autostart=autostart or AutoStart(),
             open_url=open_url,
             reveal=reveal,
             extension_dir=extension_dir or default_extension_dir(),

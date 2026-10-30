@@ -8,11 +8,11 @@
   import SaveState from "../components/SaveState.svelte";
   import Segmented from "../components/Segmented.svelte";
   import Toggle from "../components/Toggle.svelte";
-  import { get, message, patch, post } from "../lib/api";
+  import { get, message, patch, post, put } from "../lib/api";
   import { core, setStatus } from "../lib/events.svelte";
   import { duration } from "../lib/format";
   import { createSaver } from "../lib/save.svelte";
-  import type { AIConfig, LadderStep, Settings, Status } from "../lib/types";
+  import type { AIConfig, AppInfo, LadderStep, Settings, Status, UpdateView } from "../lib/types";
 
   let settings = $state<Settings | null>(null);
   let config = $state<AIConfig | null>(null);
@@ -37,7 +37,61 @@
       error = message(e);
     }
   }
-  onMount(load);
+  let appInfo = $state<AppInfo | null>(null);
+  let autostartError = $state<string | null>(null);
+  let checking = $state(false);
+
+  function updateText(u: UpdateView | undefined): string {
+    switch (u?.state) {
+      case "available":
+        return `Motwi ${u.latest} is available.`;
+      case "current":
+        return "You're on the latest version.";
+      case "unpublished":
+        return "No release has been published yet.";
+      case "failed":
+        return `Couldn't check just now. ${u.detail}`;
+      case "off":
+        return "The update check is turned off for this install.";
+      default:
+        return "Not checked yet.";
+    }
+  }
+
+  async function loadApp() {
+    try {
+      appInfo = await get<AppInfo>("/app");
+    } catch {
+      appInfo = null;
+    }
+  }
+
+  async function setAutostart(enabled: boolean) {
+    autostartError = null;
+    try {
+      const autostart = await put<AppInfo["autostart"]>("/app/autostart", { enabled });
+      if (appInfo) appInfo.autostart = autostart;
+    } catch (e) {
+      autostartError = message(e);
+    }
+  }
+
+  async function checkUpdate() {
+    checking = true;
+    try {
+      const update = await post<UpdateView>("/app/check-update");
+      if (appInfo) appInfo.update = update;
+    } catch (e) {
+      if (appInfo) appInfo.update = { ...appInfo.update, state: "failed", detail: message(e) };
+    } finally {
+      checking = false;
+    }
+  }
+
+  onMount(() => {
+    void load();
+    void loadApp();
+  });
 
   async function set(field: keyof Settings, value: unknown) {
     const result = await saver.save(String(field), () => patch<Settings>("/settings", { [field]: value }));
@@ -315,15 +369,44 @@
           <div class="row">
             <div class="grow">
               <p class="label">Start with Windows</p>
-              <p class="help">Arrives with the installer.</p>
+              <p class="help">
+                {#if appInfo && !appInfo.autostart.available}
+                  Only in the installed app.
+                {:else}
+                  Motwi starts in the tray when you sign in, ready for your stream.
+                {/if}
+              </p>
+              {#if autostartError}<p class="err" role="alert">{autostartError}</p>{/if}
             </div>
-            <Toggle checked={false} label="Start with Windows" disabled onchange={() => {}} />
+            <Toggle
+              checked={appInfo?.autostart.enabled ?? false}
+              label="Start with Windows"
+              disabled={!appInfo?.autostart.available}
+              onchange={setAutostart}
+            />
           </div>
           <div class="row">
             <div class="grow">
-              <p class="label">Version</p>
-              <p class="help">Motwi {s.version}. Update checks arrive with the installer.</p>
+              <p class="label">Check for updates</p>
+              <p class="help">Once a day Motwi asks GitHub for the latest version. Nothing downloads on its own.</p>
             </div>
+            <Toggle
+              checked={settings?.check_updates ?? true}
+              label="Check for updates"
+              onchange={(v) => set("check_updates", v)}
+            />
+          </div>
+          <div class="row">
+            <div class="grow">
+              <p class="label">Version {s.version}</p>
+              <p class="help" role="status">{updateText(appInfo?.update)}</p>
+            </div>
+            {#if appInfo?.update.state === "available" && appInfo.update.url}
+              <a class="btn sm pri" href={appInfo.update.url} target="_blank" rel="noreferrer">Get {appInfo.update.latest}</a>
+            {/if}
+            <button class="btn sm" disabled={checking} onclick={checkUpdate}>
+              {#if checking}<Icon name="circle-notch" size={14} spin />{/if}Check now
+            </button>
           </div>
         </div>
       </section>

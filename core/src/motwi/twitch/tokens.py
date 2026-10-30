@@ -1,6 +1,7 @@
 """Twitch tokens and API keys, kept in the OS credential store (Windows Credential Manager)."""
 
 import json
+import os
 from dataclasses import asdict, dataclass
 from typing import Literal, Protocol
 
@@ -24,23 +25,28 @@ class SecretStore(Protocol):
     def delete(self, name: str) -> None: ...
 
 
+def _service() -> str:
+    # the installer's round-trip test sets this, so it can never see real sign-ins
+    return os.environ.get("MOTWI_KEYRING_SERVICE") or SERVICE
+
+
 class KeyringSecrets:
     def get(self, name: str) -> str | None:
         import keyring
 
-        return keyring.get_password(SERVICE, name)
+        return keyring.get_password(_service(), name)
 
     def set(self, name: str, value: str) -> None:
         import keyring
 
-        keyring.set_password(SERVICE, name, value)
+        keyring.set_password(_service(), name, value)
 
     def delete(self, name: str) -> None:
         import keyring
         from keyring.errors import PasswordDeleteError
 
         try:
-            keyring.delete_password(SERVICE, name)
+            keyring.delete_password(_service(), name)
         except PasswordDeleteError:
             pass
 

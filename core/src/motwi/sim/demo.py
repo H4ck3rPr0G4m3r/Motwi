@@ -30,6 +30,7 @@ from motwi.events import ActionChanged
 from motwi.models import Ceiling, Kind, Source, Status, StreamContext
 from motwi.moderation import ExecutorError, ModerationService
 from motwi.paths import ui_dir
+from motwi.recap import build_recap
 from motwi.service import Motwi, _Session
 from motwi.settings import ProviderConfig
 from motwi.store import NewAction, Store, Usage
@@ -158,6 +159,12 @@ async def seed(store: Store) -> None:
                 f"demo-{d}",
             )
         )
+    # the last finished stream has a recap; demo-1 was on the backup AI for a while
+    await store.ai_state_changed("degraded", "Gemini timing out", now - day - 3 * 3600 + 1800)
+    await store.ai_state_changed("ok", "", now - day - 3 * 3600 + 2400)
+    finished = await store.get_stream("demo-1")
+    if finished is not None:
+        await store.save_recap("demo-1", await build_recap(store, finished))
     # two open ban requests right now
     for login, text in (("xx_v0id_xx", "go back to where you came from"), ("kiwi_drift", "kys")):
         await store.insert_action(

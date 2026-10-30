@@ -4,6 +4,7 @@
   import Empty from "../components/Empty.svelte";
   import Icon from "../components/Icon.svelte";
   import LoadError from "../components/LoadError.svelte";
+  import RecapCard from "../components/RecapCard.svelte";
   import SkeletonRows from "../components/SkeletonRows.svelte";
   import Toggle from "../components/Toggle.svelte";
   import { get, message, patch, post } from "../lib/api";
@@ -109,14 +110,16 @@
   <div class="pagehead">
     <div>
       <h1>Overview</h1>
-      <p>Today on your channel. Everything live also shows up in Twitch chat once the extension is in.</p>
+      <p>Today on your channel. With the browser extension, everything live also shows up in Twitch chat.</p>
     </div>
   </div>
 
   {#if data}
     {#each data.warnings as w (w.kind + w.text)}
       <div class="notice {w.level}" role="alert">
-        <span class="ic"><Icon name={w.level === "error" ? "warning-circle" : "warning"} size={18} /></span>
+        <span class="ic">
+          <Icon name={w.level === "error" ? "warning-circle" : w.level === "info" ? "arrow-circle-up" : "warning"} size={18} />
+        </span>
         <div style="flex:1">{w.text}</div>
         {#if w.kind === "twitch" && s.twitch.state === "reconnect"}
           <button class="btn sm" onclick={() => go("settings")}>Reconnect Twitch</button>
@@ -124,6 +127,8 @@
           <button class="btn sm" onclick={reconnect} disabled={reconnecting}>Try again</button>
         {:else if w.kind === "ai"}
           <button class="btn sm" onclick={() => go("settings")}>AI settings</button>
+        {:else if w.kind === "update" && w.url}
+          <a class="btn sm" href={w.url} target="_blank" rel="noreferrer">Get the update</a>
         {/if}
       </div>
     {/each}
@@ -228,9 +233,12 @@
       </section>
 
       <section class="sec">
-        <h2>Last stream</h2>
+        <h2>{s.stream.live && data.last_recap ? "Previous stream" : "Last stream"}</h2>
         <div class="card">
-          {#if data.last_stream}
+          {#if data.last_recap}
+            <RecapCard recap={data.last_recap} />
+            <button class="link" onclick={() => go("stats", { range: "stream" })}>More in Stats<Icon name="arrow-right" size={13} /></button>
+          {:else if data.last_stream}
             <p class="t">{data.last_stream.game ?? "Stream"}</p>
             <p class="muted small">{data.last_stream.title ?? ""}</p>
             <p class="dim small" style="margin-top:6px">
@@ -341,7 +349,7 @@
   }
   .cols {
     display: grid;
-    grid-template-columns: 1fr 300px;
+    grid-template-columns: 1fr 320px;
     gap: 22px;
     align-items: start;
   }

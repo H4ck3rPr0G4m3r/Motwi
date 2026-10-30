@@ -50,6 +50,7 @@ export interface Status {
   ai: { state: AIState; detail: string; primary: ProviderView | null; backup: ProviderView | null };
   month_cost: number;
   open_requests: number;
+  update: { available: boolean; version: string | null; url: string | null };
 }
 
 export interface Action {
@@ -110,6 +111,7 @@ export interface Settings {
   retention_days: number;
   setup_complete: boolean;
   paused: boolean;
+  check_updates: boolean;
   [key: string]: unknown;
 }
 
@@ -133,8 +135,41 @@ export interface StreamInfo {
 
 export interface Warning {
   kind: string;
-  level: "warn" | "error";
+  level: "info" | "warn" | "error";
   text: string;
+  url?: string;
+}
+
+export interface Recap {
+  stream_id: string;
+  title: string | null;
+  game: string | null;
+  started_at: number;
+  ended_at: number;
+  seen_ending: boolean;
+  checked: number;
+  unchecked: number;
+  actions: Totals;
+  triggers: { label: string; count: number }[];
+  escalated: { login: string; actions: number; kind: Kind; duration_s: number | null }[];
+  cost: number;
+  ai_requests: number;
+  outages: { state: "down" | "degraded"; detail: string; started_at: number; ended_at: number }[];
+}
+
+export interface UpdateView {
+  state: "idle" | "off" | "current" | "available" | "unpublished" | "failed";
+  latest: string | null;
+  url: string | null;
+  notes: string;
+  detail: string;
+  checked_at: number | null;
+}
+
+export interface AppInfo {
+  version: string;
+  autostart: { available: boolean; enabled: boolean };
+  update: UpdateView;
 }
 
 export interface Overview {
@@ -143,6 +178,7 @@ export interface Overview {
   recent: Action[];
   warnings: Warning[];
   last_stream: StreamInfo | null;
+  last_recap: Recap | null;
 }
 
 export interface DayRow {

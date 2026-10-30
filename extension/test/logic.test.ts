@@ -76,6 +76,7 @@ function status(over: Partial<Status> = {}): Status {
     },
     month_cost: 0,
     open_requests: 0,
+    update: { available: false, version: null, url: null },
     ...over,
   };
 }

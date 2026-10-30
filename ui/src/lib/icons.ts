@@ -43,6 +43,7 @@ import hourglass from "@phosphor-icons/core/assets/regular/hourglass.svg?raw";
 import signOut from "@phosphor-icons/core/assets/regular/sign-out.svg?raw";
 import puzzlePiece from "@phosphor-icons/core/assets/regular/puzzle-piece.svg?raw";
 import browser from "@phosphor-icons/core/assets/regular/browser.svg?raw";
+import arrowCircleUp from "@phosphor-icons/core/assets/regular/arrow-circle-up.svg?raw";
 import folderOpen from "@phosphor-icons/core/assets/regular/folder-open.svg?raw";
 import star from "@phosphor-icons/core/assets/regular/star.svg?raw";
 import userCheck from "@phosphor-icons/core/assets/regular/user-check.svg?raw";
@@ -96,6 +97,7 @@ export const ICONS = {
   "sign-out": signOut,
   "puzzle-piece": puzzlePiece,
   "browser": browser,
+  "arrow-circle-up": arrowCircleUp,
   "folder-open": folderOpen,
   "star": star,
   "user-check": userCheck,
