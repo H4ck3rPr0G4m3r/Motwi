@@ -112,6 +112,17 @@ MIGRATIONS: list[str] = [
     CREATE INDEX idx_actions_stream ON actions(stream_id);
     CREATE INDEX idx_usage_ts ON ai_usage(ts);
     """,
+    # browsers paired with this Motwi; only token hashes are kept
+    """
+    CREATE TABLE clients (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        label TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        created_at REAL NOT NULL,
+        last_seen REAL
+    );
+    """,
 ]
 
 # what a stats total counts: everything except suggestions nobody took
@@ -210,6 +221,16 @@ class ActionFilter:
     actor: str | None = None  # "motwi" matches actions nobody took by hand
     query: str | None = None
     since: float | None = None
+
+
+@dataclass(frozen=True)
+class ClientRecord:
+    id: str
+    kind: str
+    label: str
+    token_hash: str
+    created_at: float
+    last_seen: float | None
 
 
 @dataclass(frozen=True)
@@ -328,6 +349,44 @@ class Store:
     async def close(self) -> None:
         await self._run(lambda c: c.close())
         self._ex.shutdown(wait=True)
+
+    # paired clients
+
+    async def add_client(self, kind: str, label: str, token_hash: str) -> ClientRecord:
+        record = ClientRecord(uuid4().hex, kind, label, token_hash, time.time(), None)
+        await self._write(
+            lambda c: c.execute(
+                "INSERT INTO clients(id, kind, label, token_hash, created_at, last_seen) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    record.id,
+                    record.kind,
+                    record.label,
+                    record.token_hash,
+                    record.created_at,
+                    record.last_seen,
+                ),
+            )
+        )
+        return record
+
+    async def list_clients(self) -> list[ClientRecord]:
+        rows = await self._run(
+            lambda c: c.execute(
+                "SELECT id, kind, label, token_hash, created_at, last_seen FROM clients "
+                "ORDER BY created_at"
+            ).fetchall()
+        )
+        return [ClientRecord(*row) for row in rows]
+
+    async def delete_client(self, client_id: str) -> bool:
+        cur = await self._write(lambda c: c.execute("DELETE FROM clients WHERE id=?", (client_id,)))
+        return cur.rowcount > 0
+
+    async def touch_client(self, client_id: str, ts: float) -> None:
+        await self._write(
+            lambda c: c.execute("UPDATE clients SET last_seen=? WHERE id=?", (ts, client_id))
+        )
 
     # settings
 

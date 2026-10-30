@@ -70,6 +70,7 @@ EDITABLE_SETTINGS = {
     "setup_complete",
 }
 OPEN_REQUEST = (Status.PENDING, Status.EXPIRED)
+CHAT_RECENT = 100
 
 
 class NotConnected(Exception):
@@ -629,12 +630,14 @@ class Motwi:
     def actor(self) -> str:
         return self.streamer_login or "streamer"
 
-    async def act(self, action_id: int, verb: str, actor: str | None = None) -> ActionRecord:
+    async def act(
+        self, action_id: int, verb: str, actor: str | None = None, *, as_warn: bool = False
+    ) -> ActionRecord:
         s = self._require_session()
         m = s.app.moderation
         who = actor or self.actor()
         if verb == "approve":
-            return await m.approve(action_id, who)
+            return await m.approve(action_id, who, as_warn=as_warn)
         if verb == "deny":
             return await m.deny(action_id, who)
         if verb == "undo":
@@ -804,6 +807,36 @@ class Motwi:
             "last_stream": _stream_view(next(iter(await self.store.list_streams(limit=1)), None)),
         }
 
+    async def chat_view(self) -> dict:
+        """What the in-chat bar shows: this stream's, or without a stream today's, actions."""
+        now = self._clock()
+        stream_id = self.live.stream.stream_id
+        since = None if stream_id else _midnight(0, now)
+        counts = await self.store.action_counts(since=since, stream_id=stream_id)
+        open_requests = await self.store.list_actions(
+            where=ActionFilter(kinds=(Kind.BAN_REQUEST,), statuses=OPEN_REQUEST), limit=50
+        )
+        warnings = await self._warnings(now)
+        expired = sum(a.status is Status.EXPIRED for a in open_requests)
+        if expired:
+            word = "request is" if expired == 1 else "requests are"
+            warnings.append(
+                {
+                    "kind": "requests",
+                    "level": "warn",
+                    "text": f"{expired} ban {word} still waiting for an answer.",
+                }
+            )
+        return {
+            "status": await self.status(),
+            "counts": _live_counts(counts),
+            "recent": await self.store.list_actions(
+                where=ActionFilter(stream_id=stream_id, since=since), limit=CHAT_RECENT
+            ),
+            "open_requests": open_requests,
+            "warnings": warnings,
+        }
+
     async def _warnings(self, now: float) -> list[dict]:
         out: list[dict] = []
         twitch = self.twitch_state
@@ -944,6 +977,23 @@ def _kind_totals(counts: Mapping[tuple[Kind, Status], int]) -> dict[str, dict[st
         elif status is Status.SUGGESTED:
             row["suggested"] += n
     return out
+
+
+def _live_counts(counts: Mapping[tuple[Kind, Status], int]) -> dict[str, int]:
+    """Actions that stand right now, for the in-chat bar: no undone, denied or failed ones."""
+    totals = _kind_totals(counts)
+
+    def standing(kind: str) -> int:
+        t = totals[kind]
+        return t["count"] - t["undone"] - t["denied"] - t["failed"]
+
+    return {
+        "delete": standing("delete"),
+        "warn": standing("warn"),
+        "timeout": standing("timeout"),
+        "ban": standing("ban_request"),
+        "suggested": sum(t["suggested"] for t in totals.values()),
+    }
 
 
 def _trigger_label(source: Source, rule_id: str | None, rules: Mapping[str, Rule]) -> str:
