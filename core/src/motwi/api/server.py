@@ -5,14 +5,19 @@ Security model (spec 2, anti-goals):
   which stops DNS rebinding.
 - Every /api call carries a bearer token. The WebSocket sends its token in the first
   frame, because browsers can't set headers on a WebSocket.
-- There are no CORS headers, so no web page can read a response.
+- There are no CORS headers, so no web page can read a response. The extension's host
+  permissions let it read them without any.
+- A paired extension has its own token, limited to what the in-chat bar needs.
 """
 
 import asyncio
 import hmac
 import json
 import logging
+import os
+import re
 import secrets
+import webbrowser
 from collections.abc import Awaitable, Callable
 from dataclasses import fields
 from enum import Enum
@@ -22,16 +27,19 @@ from typing import Any
 from aiohttp import WSMsgType, web
 
 from motwi import __version__
+from motwi.api.pairing import CODE_TTL_S, Pairing, PairingError
 from motwi.events import (
     ActionChanged,
     AIStateChanged,
     BanRequestReminder,
+    ExtensionChanged,
     LoginFinished,
     StatusChanged,
     StreamChanged,
 )
 from motwi.models import Kind, Source, Status
 from motwi.moderation import AlreadyResolved, ExecutorError
+from motwi.paths import extension_dir as default_extension_dir
 from motwi.service import FieldError, Motwi, NotConnected
 from motwi.store import ActionFilter, ActionRecord
 from motwi.twitch.auth import AuthError, AuthExpired
@@ -42,6 +50,17 @@ log = logging.getLogger(__name__)
 DEFAULT_PORT = 47815
 HELLO_TIMEOUT_S = 5.0
 STATUS_DEBOUNCE_S = 0.2
+
+EXTENSION_ORIGIN = "chrome-extension://"
+PUBLIC_PATHS = ("/api/ping", "/api/show", "/api/events", "/api/pair")
+# everything a paired extension may call; the rest of the API is the window's alone
+EXTENSION_ROUTES = (
+    ("GET", re.compile(r"/api/status")),
+    ("GET", re.compile(r"/api/chat")),
+    ("POST", re.compile(r"/api/engine")),
+    ("POST", re.compile(r"/api/actions/\d+/\w+")),
+    ("POST", re.compile(r"/api/extension/leave")),
+)
 
 Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
@@ -54,13 +73,14 @@ class ApiAuth:
 
     def check(self, token: str | None) -> str | None:
         """The client kind for a valid token, else None."""
-        if token and hmac.compare_digest(token, self.window_token):
+        if token and hmac.compare_digest(token.encode(), self.window_token.encode()):
             return "window"
         return None
 
 
 MOTWI = web.AppKey("motwi", Motwi)
 AUTH = web.AppKey("auth", ApiAuth)
+PAIRING = web.AppKey("pairing", Pairing)
 ORIGINS = web.AppKey("origins", set)
 
 
@@ -110,11 +130,14 @@ def _middlewares(port: int) -> list:
         if request.host not in hosts:
             return _error(403, "forbidden host")
         path = request.path
-        if path.startswith("/api/") and path not in ("/api/ping", "/api/show", "/api/events"):
+        if path.startswith("/api/") and path not in PUBLIC_PATHS:
             header = request.headers.get("Authorization", "")
             token = header[7:] if header.startswith("Bearer ") else None
             if request.app[AUTH].check(token) is None:
-                return _error(401, "not signed in to Motwi")
+                if request.app[PAIRING].check(token) is None:
+                    return _error(401, "not signed in to Motwi")
+                if not _extension_may(request.method, path):
+                    return _error(403, "the extension can't do that")
         try:
             return await handler(request)
         except web.HTTPException:
@@ -153,6 +176,10 @@ def _middlewares(port: int) -> list:
     return [headers, guard]
 
 
+def _extension_may(method: str, path: str) -> bool:
+    return any(method == m and pattern.fullmatch(path) for m, pattern in EXTENSION_ROUTES)
+
+
 async def _body(request: web.Request) -> dict:
     if not request.can_read_body:
         return {}
@@ -178,7 +205,23 @@ def _role(value: Any) -> str:
 # routes
 
 
-def _routes(motwi: Motwi, on_show: Callable[[], None] | None) -> web.RouteTableDef:
+def _reveal_folder(path: Path) -> None:
+    if hasattr(os, "startfile"):
+        os.startfile(path)  # type: ignore[attr-defined]
+    else:
+        webbrowser.open(path.as_uri())
+
+
+def _routes(
+    motwi: Motwi,
+    pairing: Pairing,
+    *,
+    port: int,
+    on_show: Callable[[], None] | None,
+    open_url: Callable[[str], Any],
+    reveal: Callable[[Path], Any],
+    extension_dir: Path,
+) -> web.RouteTableDef:
     r = web.RouteTableDef()
 
     @r.get("/api/ping")
@@ -300,11 +343,19 @@ def _routes(motwi: Motwi, on_show: Callable[[], None] | None) -> web.RouteTableD
             action_id = int(request.match_info["id"])
         except ValueError as e:
             raise KeyError(request.match_info["id"]) from e
-        return ok(action_json(await motwi.act(action_id, verb)))
+        as_warn = (await _body(request)).get("as") == "warn"
+        return ok(action_json(await motwi.act(action_id, verb, as_warn=as_warn)))
 
     @r.get("/api/streams")
     async def streams(_: web.Request) -> web.Response:
         return ok(await motwi.store.list_streams(limit=50))
+
+    @r.get("/api/chat")
+    async def chat(_: web.Request) -> web.Response:
+        data = await motwi.chat_view()
+        data["recent"] = [action_json(a) for a in data["recent"]]
+        data["open_requests"] = [action_json(a) for a in data["open_requests"]]
+        return ok(data)
 
     # stats
 
@@ -322,6 +373,53 @@ def _routes(motwi: Motwi, on_show: Callable[[], None] | None) -> web.RouteTableD
     @r.post("/api/try")
     async def try_message(request: web.Request) -> web.Response:
         return ok(await motwi.try_message(_str(await _body(request), "text")))
+
+    # the browser extension
+
+    @r.post("/api/pair")
+    async def pair(request: web.Request) -> web.Response:
+        if not request.headers.get("Origin", "").startswith(EXTENSION_ORIGIN):
+            return _error(403, "forbidden origin")
+        data = await _body(request)
+        try:
+            client, token = await pairing.redeem(_str(data, "code"), _str(data, "label", "Browser"))
+        except PairingError as e:
+            return _error(410, str(e))
+        return ok({"token": token, "client_id": client.id, "channel": motwi.streamer_login})
+
+    @r.post("/api/extension/leave")
+    async def leave(request: web.Request) -> web.Response:
+        # the extension disconnecting itself; the window has no such client and gets a 404
+        client_id = pairing.check(request.headers.get("Authorization", "")[7:])
+        if client_id is None:
+            raise KeyError("client")
+        await pairing.revoke(client_id)
+        return ok()
+
+    @r.get("/api/extension")
+    async def extension(_: web.Request) -> web.Response:
+        built = (extension_dir / "manifest.json").is_file()
+        return ok(
+            {"clients": await pairing.clients(), "folder": str(extension_dir) if built else None}
+        )
+
+    @r.post("/api/extension/pair")
+    async def start_pairing(_: web.Request) -> web.Response:
+        url = f"http://127.0.0.1:{port}/pair.html#c={pairing.start()}"
+        await asyncio.get_running_loop().run_in_executor(None, open_url, url)
+        return ok({"url": url, "expires_in": CODE_TTL_S})
+
+    @r.post("/api/extension/reveal")
+    async def reveal_folder(_: web.Request) -> web.Response:
+        if not (extension_dir / "manifest.json").is_file():
+            raise KeyError("extension")
+        await asyncio.get_running_loop().run_in_executor(None, reveal, extension_dir)
+        return ok()
+
+    @r.delete("/api/extension/clients/{id}")
+    async def revoke_client(request: web.Request) -> web.Response:
+        await pairing.revoke(request.match_info["id"])
+        return ok()
 
     # Twitch accounts
 
@@ -443,8 +541,10 @@ def _allowed_origins(port: int) -> set[str]:
 
 async def _events(request: web.Request) -> web.StreamResponse:
     motwi: Motwi = request.app[MOTWI]
+    pairing = request.app[PAIRING]
     origin = request.headers.get("Origin")
-    if origin is not None and origin not in request.app[ORIGINS]:
+    from_extension = origin is not None and origin.startswith(EXTENSION_ORIGIN)
+    if origin is not None and not from_extension and origin not in request.app[ORIGINS]:
         return _error(403, "forbidden origin")
     ws = web.WebSocketResponse(heartbeat=20, max_msg_size=64 * 1024)
     await ws.prepare(request)
@@ -458,11 +558,17 @@ async def _events(request: web.Request) -> web.StreamResponse:
         try:
             frame = json.loads(hello.data)
             token = frame.get("token") if isinstance(frame, dict) else None
+            if not isinstance(token, str):
+                token = None
         except ValueError:
             token = None
-    if request.app[AUTH].check(token) is None:
-        await ws.close(code=4401, message=b"not signed in to Motwi")
-        return ws
+    client_id: str | None = None
+    if from_extension or request.app[AUTH].check(token) is None:  # never the window's token
+        client_id = pairing.check(token)
+        if client_id is None:
+            await ws.close(code=4401, message=b"not signed in to Motwi")
+            return ws
+        await pairing.attach(client_id, ws)
 
     q = motwi.bus.subscribe()
     await ws.send_str(_dumps({"type": "hello", "status": await motwi.status()}))
@@ -497,9 +603,11 @@ async def _events(request: web.Request) -> web.StreamResponse:
                 )
             elif isinstance(e, (StatusChanged, AIStateChanged, StreamChanged)):
                 dirty.set()
+            elif isinstance(e, ExtensionChanged) and client_id is None:
+                await ws.send_str(_dumps({"type": "extension"}))
 
     async def drain() -> None:
-        async for _ in ws:  # nothing to receive after hello; ends when the client leaves
+        async for _ in ws:  # only keepalives after hello; ends when the client leaves
             pass
 
     tasks = [asyncio.create_task(c) for c in (send_status(), forward(), drain())]
@@ -510,6 +618,8 @@ async def _events(request: web.Request) -> web.StreamResponse:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         motwi.bus.unsubscribe(q)
+        if client_id is not None:
+            pairing.detach(client_id, ws)
         await ws.close()
     return ws
 
@@ -524,12 +634,32 @@ def create_app(
     port: int = DEFAULT_PORT,
     ui_dir: Path | None = None,
     on_show: Callable[[], None] | None = None,
+    open_url: Callable[[str], Any] = webbrowser.open,
+    reveal: Callable[[Path], Any] = _reveal_folder,
+    extension_dir: Path | None = None,
 ) -> web.Application:
     app = web.Application(middlewares=_middlewares(port), client_max_size=256 * 1024)
+    pairing = Pairing(motwi.store, motwi.bus)
     app[MOTWI] = motwi
     app[AUTH] = auth
+    app[PAIRING] = pairing
     app[ORIGINS] = _allowed_origins(port)
-    app.add_routes(_routes(motwi, on_show))
+
+    async def load_pairing(_: web.Application) -> None:
+        await pairing.load()
+
+    app.on_startup.append(load_pairing)
+    app.add_routes(
+        _routes(
+            motwi,
+            pairing,
+            port=port,
+            on_show=on_show,
+            open_url=open_url,
+            reveal=reveal,
+            extension_dir=extension_dir or default_extension_dir(),
+        )
+    )
     app.router.add_get("/api/events", _events)
     if ui_dir is not None and (ui_dir / "index.html").is_file():
         index = ui_dir / "index.html"

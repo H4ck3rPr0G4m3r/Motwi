@@ -222,11 +222,16 @@ class ModerationService:
         )
         return self._publish(record)
 
-    async def approve(self, action_id: int, actor: str) -> ActionRecord:
+    async def approve(self, action_id: int, actor: str, *, as_warn: bool = False) -> ActionRecord:
+        """Carry out a suggestion or ban request. `as_warn` softens a suggestion to a warning."""
         async with self._lock(action_id):
             record = await self._load(action_id)
             if record.status not in (Status.PENDING, Status.EXPIRED, Status.SUGGESTED):
                 raise AlreadyResolved(f"action {action_id} is {record.status.value}")
+            if as_warn:
+                if record.status is not Status.SUGGESTED or record.kind is Kind.WARN:
+                    raise AlreadyResolved(f"action {action_id} can't become a warning")
+                record = await self._store.update_action(action_id, kind=Kind.WARN, duration_s=None)
             # A raised ban request (pending or expired) had its message deleted back then.
             already_deleted = record.status is not Status.SUGGESTED
             error: str | None = None

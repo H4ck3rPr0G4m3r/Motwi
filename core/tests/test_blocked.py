@@ -9,8 +9,17 @@ A = BlockedWord("w3", "ass")
 bw = BlockedWords([W, P, A])
 
 
-@pytest.mark.parametrize("text", ["STRMBOOST", "s t r m b o o s t", "strmb00st", "s.t.r.m.b.o.o.s.t",
-                                  "strmbooooost", "go to strm\u200bboost now"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "STRMBOOST",
+        "s t r m b o o s t",
+        "strmb00st",
+        "s.t.r.m.b.o.o.s.t",
+        "strmbooooost",
+        "go to strm\u200bboost now",
+    ],
+)
 def test_obfuscations_match(text):
     assert bw.match(text) == W
 

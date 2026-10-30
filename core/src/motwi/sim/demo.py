@@ -1,10 +1,14 @@
 """A demo of the app window over sample data, for UI work and screenshots.
 
-    uv run python -m motwi.sim.demo [--setup] [--port 47900]
+    uv run python -m motwi.sim.demo [--setup] [--empty] [--port 47900] [--channel name]
 
 It uses a throwaway data folder and an in-memory credential store, never your real
-Motwi data or Twitch account. Twitch is faked as connected; buttons that need Twitch
-report that it isn't.
+Motwi data or Twitch account. Twitch is faked as connected, and buttons act on a fake
+that only logs. `--channel` sets which channel the extension activates on.
+
+For extension work, two extra routes take the demo token: `POST /api/demo/action` adds an
+action as if Motwi had just decided it, and `POST /api/demo/fail` makes the fake Twitch
+refuse calls.
 """
 
 import argparse
@@ -14,12 +18,19 @@ import tempfile
 import time
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+from aiohttp import web
 
 from motwi.api import ApiAuth, create_app, serve
 from motwi.app import seed_if_empty
+from motwi.engine.offenses import OffenseTracker
+from motwi.events import ActionChanged
 from motwi.models import Ceiling, Kind, Source, Status, StreamContext
+from motwi.moderation import ExecutorError, ModerationService
 from motwi.paths import ui_dir
-from motwi.service import Motwi
+from motwi.service import Motwi, _Session
 from motwi.settings import ProviderConfig
 from motwi.store import NewAction, Store, Usage
 from motwi.twitch.tokens import MemorySecrets, Token, TokenStore
@@ -173,18 +184,106 @@ async def seed(store: Store) -> None:
         )
 
 
-async def main(port: int, setup: bool) -> None:
+class FakeTwitch:
+    """Stands in for Helix so the app's buttons work. `failing` makes every call refuse."""
+
+    def __init__(self) -> None:
+        self.failing = False
+
+    async def _call(self, what: str) -> None:
+        print(f"fake Twitch: {what}", flush=True)
+        if self.failing:
+            raise ExecutorError("Twitch said no (demo)")
+
+    async def delete_message(self, message_id: str) -> None:
+        await self._call(f"delete {message_id}")
+
+    async def warn(self, user_id: str, reason: str) -> None:
+        await self._call(f"warn {user_id}")
+
+    async def send_chat(self, text: str) -> None:
+        await self._call(f"chat {text}")
+
+    async def timeout(self, user_id: str, seconds: int, reason: str) -> None:
+        await self._call(f"timeout {user_id} {seconds}s")
+
+    async def ban(self, user_id: str, reason: str) -> None:
+        await self._call(f"ban {user_id}")
+
+    async def unban(self, user_id: str) -> None:
+        await self._call(f"unban {user_id}")
+
+    async def banned_users(self, _broadcaster_id: str) -> list[dict]:
+        return []
+
+
+def fake_session(motwi: Motwi, twitch: FakeTwitch, login: str) -> _Session:
+    moderation = ModerationService(
+        store=motwi.store,
+        executor=twitch,
+        bus=motwi.bus,
+        live=motwi.live,
+        offenses=OffenseTracker(),
+    )
+
+    async def reset_clients() -> None:
+        pass
+
+    app: Any = SimpleNamespace(moderation=moderation, scorer=None)
+    app.scorer = SimpleNamespace(reset_clients=reset_clients, try_score=None)
+    helix: Any = twitch
+    executor: Any = twitch
+    return _Session(helix, helix, executor, app, "42", login)
+
+
+def demo_routes(motwi: Motwi, twitch: FakeTwitch) -> list[web.RouteDef]:
+    async def add_action(request: web.Request) -> web.Response:
+        d = await request.json()
+        kind = Kind(d.get("kind", "delete"))
+        status = Status(d.get("status", "done"))
+        record = await motwi.store.insert_action(
+            NewAction(
+                motwi.live.stream.stream_id,
+                d.get("user_id", f"id-{d['login']}"),
+                d["login"],
+                d["message_id"],
+                d["text"],
+                [],
+                Source(d.get("source", "ai")),
+                d.get("rule_id"),
+                d.get("score"),
+                d.get("reason", "Demo reason"),
+                kind,
+                True,
+                d.get("duration_s"),
+                None,
+                status,
+                d.get("actor"),
+                bool(d.get("hold_applied", status is Status.PENDING)),
+                d.get("error"),
+            )
+        )
+        motwi.bus.publish(ActionChanged(record))
+        return web.json_response({"id": record.id})
+
+    async def set_failing(request: web.Request) -> web.Response:
+        twitch.failing = bool((await request.json()).get("on"))
+        return web.json_response({"ok": True})
+
+    return [web.post("/api/demo/action", add_action), web.post("/api/demo/fail", set_failing)]
+
+
+async def main(port: int, setup: bool, channel: str, empty: bool = False) -> None:
     home = Path(tempfile.mkdtemp(prefix="motwi-demo-"))
     store = await Store.open(home / "motwi.db")
     secrets = MemorySecrets()
     secrets.set("ai:primary", "demo-key")
     if not setup:
-        TokenStore(secrets).save(
-            "streamer", Token("x", "y", time.time() + 3600, (), "42", "official_h4ck3r")
-        )
+        TokenStore(secrets).save("streamer", Token("x", "y", time.time() + 3600, (), "42", channel))
     if not setup:
         await seed_if_empty(store)
-        await seed(store)
+        if not empty:
+            await seed(store)
         await store.save_settings(
             replace(
                 await store.get_settings(),
@@ -193,13 +292,22 @@ async def main(port: int, setup: bool) -> None:
             )
         )
     motwi = await Motwi.open(store, secrets=secrets, env={})
+    twitch = FakeTwitch()
     if not setup:
         # fake a live connection instead of calling connect(), so nothing reaches Twitch
         motwi._twitch = ("connected", "")
+        motwi._session = fake_session(motwi, twitch, channel)
         motwi.live.stream = StreamContext(
             "blind first run, no spoilers pls", "Elden Ring Nightreign", "demo-0"
         )
-    app = create_app(motwi, auth=ApiAuth(TOKEN), port=port, ui_dir=ui_dir())
+    app = create_app(
+        motwi,
+        auth=ApiAuth(TOKEN),
+        port=port,
+        ui_dir=ui_dir(),
+        open_url=lambda url: print(f"pair at {url}", flush=True),
+    )
+    app.add_routes(demo_routes(motwi, twitch))
     runner = await serve(app, port)
     print(f"Motwi demo: http://127.0.0.1:{port}/#k={TOKEN}", flush=True)
     try:
@@ -214,5 +322,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=47900)
     parser.add_argument("--setup", action="store_true", help="start at first-run setup")
+    parser.add_argument("--channel", default="official_h4ck3r", help="the fake streamer's login")
+    parser.add_argument("--empty", action="store_true", help="no sample actions")
     args = parser.parse_args()
-    asyncio.run(main(args.port, args.setup))
+    asyncio.run(main(args.port, args.setup, args.channel.lower(), args.empty))

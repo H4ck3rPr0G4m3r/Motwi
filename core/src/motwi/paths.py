@@ -37,3 +37,14 @@ def ui_dir() -> Path:
     if bundle:
         return Path(bundle) / "ui"
     return Path(__file__).resolve().parents[3] / "ui" / "dist"
+
+
+def extension_dir() -> Path:
+    """The built browser extension, same lookup as `ui_dir` with `MOTWI_EXTENSION_DIR`."""
+    override = os.environ.get("MOTWI_EXTENSION_DIR")
+    if override:
+        return Path(override)
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        return Path(bundle) / "extension"
+    return Path(__file__).resolve().parents[3] / "extension" / "dist"

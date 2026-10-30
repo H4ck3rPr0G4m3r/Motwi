@@ -318,3 +318,24 @@ async def test_expired_request_can_still_be_approved_or_denied(store, ex, bus, l
     ex.calls.clear()
     denied = await svc.deny(second.id, "streamer")
     assert denied.status is Status.DENIED and ex.calls == []
+
+
+async def test_a_suggestion_can_become_a_warning_instead(svc, ex, live):
+    set_settings(live, suggest_only=True)
+    rec = await svc.apply(msg(), TIMEOUT, [])
+    assert ex.calls == []
+    done = await svc.approve(rec.id, "streamer", as_warn=True)
+    assert (done.kind, done.duration_s, done.status) == (Kind.WARN, None, Status.DONE)
+    assert ("timeout", "u1", 60, "Motwi (streamer): insult") not in ex.calls
+    assert [c[0] for c in ex.calls] == ["delete", "warn"]
+
+
+async def test_only_a_suggestion_can_become_a_warning(svc, live):
+    pending = await svc.apply(msg(), BAN, [])
+    with pytest.raises(AlreadyResolved):
+        await svc.approve(pending.id, "streamer", as_warn=True)
+    assert (await svc._load(pending.id)).kind is Kind.BAN_REQUEST
+    set_settings(live, suggest_only=True)
+    warn = await svc.apply(msg(mid="m2", user_id="u2"), WARN, [])
+    with pytest.raises(AlreadyResolved):
+        await svc.approve(warn.id, "streamer", as_warn=True)

@@ -9,8 +9,9 @@ from itertools import groupby
 from motwi.models import Ceiling
 
 _ZERO_WIDTH = re.compile("[\u200b-\u200f\u2060\ufeff]")
-_LEET = str.maketrans({"0": "o", "1": "i", "3": "e", "4": "a",
-                       "5": "s", "7": "t", "@": "a", "$": "s"})
+_LEET = str.maketrans(
+    {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"}
+)
 _SPLIT = re.compile(r"[^a-z0-9]+")
 _REPEAT = re.compile(r"(.)\1{2,}")
 _SEVERITY = {Ceiling.DELETE: 0, Ceiling.WARN: 1, Ceiling.TIMEOUT: 2, Ceiling.BAN: 3}
@@ -58,7 +59,7 @@ class BlockedWords:
 
 def _contains(tokens: list[str], phrase: list[str]) -> bool:
     n = len(phrase)
-    return any(tokens[i:i + n] == phrase for i in range(len(tokens) - n + 1))
+    return any(tokens[i : i + n] == phrase for i in range(len(tokens) - n + 1))
 
 
 def _rank(word: BlockedWord) -> tuple[int, int]:

@@ -41,6 +41,11 @@ class LoginFinished:
     error: str | None
 
 
+@dataclass(frozen=True)
+class ExtensionChanged:
+    """A browser paired, connected, disconnected or was removed; re-read the list."""
+
+
 Event = (
     ActionChanged
     | AIStateChanged
@@ -48,6 +53,7 @@ Event = (
     | StreamChanged
     | StatusChanged
     | LoginFinished
+    | ExtensionChanged
 )
 
 

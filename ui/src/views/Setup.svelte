@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import DeviceLogin from "../components/DeviceLogin.svelte";
+  import ExtensionPanel from "../components/ExtensionPanel.svelte";
   import Icon from "../components/Icon.svelte";
   import LoadError from "../components/LoadError.svelte";
   import ProviderForm from "../components/ProviderForm.svelte";
@@ -10,7 +11,7 @@
   import { get, message, patch, post } from "../lib/api";
   import { core, setStatus } from "../lib/events.svelte";
   import { modelLabel, PROVIDER_LABEL } from "../lib/format";
-  import type { AIConfig, Rule, Settings, Status } from "../lib/types";
+  import type { AIConfig, ExtensionInfo, Rule, Settings, Status } from "../lib/types";
 
   const STEPS = ["Welcome", "Twitch", "AI", "Rules", "Extension", "Done"];
   let step = $state(0);
@@ -23,6 +24,7 @@
   let showBackup = $state(false);
   let finishing = $state(false);
   let finishError = $state<string | null>(null);
+  let extension = $state<ExtensionInfo | null>(null);
 
   const status = $derived(core.status!);
   const streamer = $derived(status.accounts.streamer);
@@ -201,13 +203,8 @@
           <p class="lead">
             The browser extension puts Motwi's decisions, undo buttons and ban requests right in your Twitch chat.
           </p>
-          <div class="notice">
-            <span class="ic"><Icon name="puzzle-piece" size={18} /></span>
-            <div>
-              The extension is coming in the next update. Until then, everything works from this window, and you can
-              connect the extension later in Settings.
-            </div>
-          </div>
+          <ExtensionPanel bind:info={extension} />
+          <p class="help">You can skip this and connect it later in Settings. Everything also works from this window.</p>
         {:else}
           <h1>Ready</h1>
           <p class="lead">Here's what Motwi will do once you start.</p>
@@ -231,7 +228,11 @@
         {#if step > 0}<button class="btn ghost" onclick={() => step--}>Back</button>{/if}
         <span class="dim blocker" aria-live="polite">{blocker ?? ""}</span>
         {#if step === 4}
-          <button class="btn" onclick={() => step++}>Skip for now</button>
+          {#if extension?.clients.length}
+            <button class="btn pri" onclick={() => step++}>Continue<Icon name="arrow-right" size={14} /></button>
+          {:else}
+            <button class="btn" onclick={() => step++}>Skip for now</button>
+          {/if}
         {:else if step === STEPS.length - 1}
           <button class="btn pri" onclick={finish} disabled={finishing}>
             {#if finishing}<Icon name="circle-notch" size={14} spin />{/if}Start watching

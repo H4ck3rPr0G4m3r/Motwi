@@ -197,6 +197,19 @@ export interface TryResult {
   error?: string;
 }
 
+export interface ExtensionClient {
+  id: string;
+  label: string;
+  created_at: number;
+  last_seen: number | null;
+  connected: boolean;
+}
+
+export interface ExtensionInfo {
+  clients: ExtensionClient[];
+  folder: string | null;
+}
+
 export interface DeviceCode {
   user_code: string;
   verification_uri: string;

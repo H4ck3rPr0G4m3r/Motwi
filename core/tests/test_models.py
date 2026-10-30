@@ -18,7 +18,11 @@ def test_presets():
 
 def test_default_ladder():
     assert [(s.kind, s.duration_s) for s in DEFAULT_LADDER] == [
-        (Kind.WARN, None), (Kind.TIMEOUT, 60), (Kind.TIMEOUT, 600), (Kind.BAN_REQUEST, None)]
+        (Kind.WARN, None),
+        (Kind.TIMEOUT, 60),
+        (Kind.TIMEOUT, 600),
+        (Kind.BAN_REQUEST, None),
+    ]
 
 
 def test_badges():
