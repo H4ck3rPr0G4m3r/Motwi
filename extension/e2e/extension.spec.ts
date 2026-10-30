@@ -286,7 +286,7 @@ test("counts and the log catch actions whose lines aren't in view", async () => 
   await expect(log).toHaveCount(0);
 });
 
-test("when Motwi stops, the bar says so at once and recovers when it returns", async () => {
+test("when Motwi stops, the bar says so at once and its buttons disable", async () => {
   await pair(browser, core);
   const page = await openChat(browser);
   await expect(bar(page).getByText("Watching")).toBeVisible();
