@@ -1,0 +1,549 @@
+/* Shared by every shadow root Motwi adds to Twitch. Colors come from page.css, so they
+   follow Twitch's theme. Radii per spec 6.4: 6px panels, 4px chips and buttons. */
+
+:host {
+  all: initial;
+  display: block;
+  position: relative;
+  font: 400 13px/1.45 "Motwi Inter", Inter, system-ui, sans-serif;
+  color: var(--mw-text);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 2px solid var(--mw-accent-text);
+  outline-offset: 1px;
+}
+
+.mono,
+.s {
+  font-family: "Motwi Mono", "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 600;
+}
+
+.ic {
+  display: inline-flex;
+  flex: none;
+}
+
+.ic svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+/* the bar */
+
+.overlay {
+  position: relative;
+}
+
+.bar {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: var(--mw-bar);
+  border-bottom: 1px solid var(--mw-line);
+}
+
+.logo {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 5px;
+  background: var(--mw-accent);
+  color: var(--mw-accent-ink);
+  font-weight: 700;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+}
+
+.bar[data-tone="off"] .logo {
+  background: var(--mw-track);
+  color: var(--mw-text);
+}
+
+.bar[data-tone="bad"] .logo {
+  background: var(--mw-error);
+  color: var(--mw-bar);
+}
+
+.st {
+  min-width: 0;
+  line-height: 1.2;
+  font-size: 12px;
+}
+
+.st b {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bar[data-tone="bad"] .st b {
+  color: var(--mw-error);
+}
+
+.st small {
+  display: block;
+  font-size: 10.5px;
+  color: var(--mw-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mode {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--mw-caution);
+  background: var(--mw-caution-bg);
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.counts {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--mw-muted);
+  font-family: "Motwi Mono", "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 600;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.counts:hover,
+.counts[aria-expanded="true"] {
+  background: var(--mw-chip);
+}
+
+[data-count="delete"] {
+  color: var(--mw-del);
+}
+[data-count="warn"] {
+  color: var(--mw-warn);
+}
+[data-count="timeout"] {
+  color: var(--mw-timeout);
+}
+[data-count="ban"] {
+  color: var(--mw-ban);
+}
+[data-count="suggested"] {
+  color: var(--mw-caution);
+}
+
+.sw {
+  flex: none;
+  width: 30px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--mw-track);
+  position: relative;
+  transition: background 0.15s ease;
+}
+
+.sw::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--mw-knob);
+  transition: transform 0.15s ease;
+}
+
+.sw[aria-checked="true"] {
+  background: var(--mw-accent);
+}
+
+.sw[aria-checked="true"]::after {
+  transform: translateX(14px);
+  background: var(--mw-accent-ink);
+}
+
+.sw:disabled {
+  opacity: 0.55;
+}
+
+.sw[aria-busy="true"] {
+  opacity: 0.7;
+}
+
+.band {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 7px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--mw-caution);
+  background: var(--mw-caution-bg);
+  border-bottom: 1px solid var(--mw-caution-line);
+}
+
+.band.bad {
+  color: var(--mw-error);
+  background: var(--mw-error-bg);
+  border-bottom-color: var(--mw-error-line);
+}
+
+/* things that float over the top of chat */
+
+.floats {
+  position: absolute;
+  z-index: 1000;
+  top: 100%;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.req {
+  background: var(--mw-req);
+  border: 1px solid var(--mw-req-line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  box-shadow: 0 14px 40px var(--mw-shadow);
+  animation: drop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.req-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mw-ban);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.close {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--mw-muted);
+}
+
+.close:hover {
+  background: var(--mw-control);
+}
+
+.req-msg {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.req-msg b {
+  font-weight: 700;
+}
+
+.req-why {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--mw-muted);
+}
+
+.req-err {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mw-error);
+}
+
+.req-act {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn {
+  flex: 1;
+  height: 30px;
+  border: 0;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+}
+
+.btn-ban {
+  background: var(--mw-ban);
+  color: var(--mw-ban-ink);
+}
+
+.btn-deny {
+  background: var(--mw-control);
+  color: var(--mw-text);
+}
+
+.btn-deny:not(:disabled):hover {
+  background: var(--mw-control-hover);
+}
+
+.req-foot {
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--mw-dim);
+}
+
+.resolved {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background: var(--mw-ok);
+  border: 1px solid var(--mw-ok-line);
+  border-radius: 6px;
+  box-shadow: 0 10px 28px var(--mw-shadow);
+  animation: fade 8s linear forwards;
+}
+
+.log {
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+  background: var(--mw-surface);
+  border: 1px solid var(--mw-line);
+  border-radius: 6px;
+  box-shadow: 0 14px 40px var(--mw-shadow);
+}
+
+.row {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--mw-line);
+}
+
+.row-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-text {
+  overflow-wrap: anywhere;
+  color: var(--mw-muted);
+}
+
+.empty {
+  padding: 14px 12px;
+  font-size: 12px;
+  color: var(--mw-dim);
+}
+
+/* marks on chat lines */
+
+.mark {
+  padding: 2px 0 3px;
+  font-size: 12px;
+}
+
+.gone {
+  color: var(--mw-gone);
+  text-decoration: line-through;
+  text-decoration-color: var(--mw-gone-line);
+  overflow-wrap: anywhere;
+}
+
+.note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 2px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--mw-chip);
+  color: var(--mw-text);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tag.neutral {
+  color: var(--mw-muted);
+}
+
+.tag.error {
+  background: var(--mw-error-bg);
+  color: var(--mw-error);
+}
+
+.tag .s {
+  color: var(--mw-muted);
+}
+
+.swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--mw-dim);
+}
+
+[data-kind="delete"] > .swatch {
+  background: var(--mw-del);
+}
+[data-kind="warn"] > .swatch {
+  background: var(--mw-warn);
+}
+[data-kind="timeout"] > .swatch {
+  background: var(--mw-timeout);
+}
+[data-kind="ban_request"] > .swatch {
+  background: var(--mw-ban);
+}
+
+.why {
+  color: var(--mw-dim);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.why.bad,
+.err {
+  color: var(--mw-error);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.act {
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--mw-accent-text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.act:not(:disabled):hover {
+  text-decoration: underline;
+}
+
+.act:disabled {
+  opacity: 0.55;
+}
+
+.sug {
+  margin-top: 5px;
+}
+
+.sug .act {
+  height: 24px;
+  padding: 0 9px;
+  background: var(--mw-control);
+  color: var(--mw-text);
+}
+
+.sug .act:not(:disabled):hover {
+  background: var(--mw-control-hover);
+  text-decoration: none;
+}
+
+.sug .act.go {
+  background: var(--mw-accent);
+  color: var(--mw-accent-ink);
+}
+
+.sug .act.go:not(:disabled):hover {
+  background: var(--mw-accent);
+  filter: brightness(1.08);
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes fade {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .req {
+    animation: none;
+  }
+  .resolved {
+    animation: none;
+  }
+  .sw,
+  .sw::after {
+    transition: none;
+  }
+}

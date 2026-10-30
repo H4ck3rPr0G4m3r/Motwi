@@ -59,6 +59,7 @@ EXTENSION_ROUTES = (
     ("GET", re.compile(r"/api/chat")),
     ("POST", re.compile(r"/api/engine")),
     ("POST", re.compile(r"/api/actions/\d+/\w+")),
+    ("POST", re.compile(r"/api/extension/leave")),
 )
 
 Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
@@ -72,7 +73,7 @@ class ApiAuth:
 
     def check(self, token: str | None) -> str | None:
         """The client kind for a valid token, else None."""
-        if token and hmac.compare_digest(token, self.window_token):
+        if token and hmac.compare_digest(token.encode(), self.window_token.encode()):
             return "window"
         return None
 
@@ -386,6 +387,15 @@ def _routes(
             return _error(410, str(e))
         return ok({"token": token, "client_id": client.id, "channel": motwi.streamer_login})
 
+    @r.post("/api/extension/leave")
+    async def leave(request: web.Request) -> web.Response:
+        # the extension disconnecting itself; the window has no such client and gets a 404
+        client_id = pairing.check(request.headers.get("Authorization", "")[7:])
+        if client_id is None:
+            raise KeyError("client")
+        await pairing.revoke(client_id)
+        return ok()
+
     @r.get("/api/extension")
     async def extension(_: web.Request) -> web.Response:
         built = (extension_dir / "manifest.json").is_file()
@@ -548,6 +558,8 @@ async def _events(request: web.Request) -> web.StreamResponse:
         try:
             frame = json.loads(hello.data)
             token = frame.get("token") if isinstance(frame, dict) else None
+            if not isinstance(token, str):
+                token = None
         except ValueError:
             token = None
     client_id: str | None = None

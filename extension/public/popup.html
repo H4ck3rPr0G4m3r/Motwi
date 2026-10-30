@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Motwi</title>
+    <style>
+      @font-face {
+        font-family: "Motwi Inter";
+        font-weight: 400;
+        src: url("fonts/inter-latin-400-normal.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Motwi Inter";
+        font-weight: 600;
+        src: url("fonts/inter-latin-600-normal.woff2") format("woff2");
+      }
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        width: 280px;
+        margin: 0;
+        padding: 14px;
+        background: #18181b;
+        color: #efeff1;
+        font: 400 13px/1.45 "Motwi Inter", system-ui, sans-serif;
+      }
+      #app {
+        display: grid;
+        gap: 10px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+      }
+      b {
+        font-weight: 600;
+      }
+      .logo {
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        background: #4fd1b5;
+        color: #06231d;
+        font-weight: 600;
+        font-size: 12px;
+        display: grid;
+        place-items: center;
+      }
+      p {
+        margin: 0;
+      }
+      .muted {
+        color: #adadb8;
+      }
+      .bad {
+        color: #f0646a;
+        font-weight: 600;
+      }
+      dl {
+        margin: 0;
+        display: grid;
+        gap: 4px;
+      }
+      dl div {
+        display: grid;
+        grid-template-columns: 62px 1fr;
+      }
+      dt {
+        color: #8f8f99;
+      }
+      dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .link {
+        color: #4fd1b5;
+        font-weight: 600;
+      }
+      button {
+        justify-self: start;
+        height: 28px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: 4px;
+        background: #2f2f35;
+        color: #efeff1;
+        font: inherit;
+        font-weight: 600;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        background: #3a3a42;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      :focus-visible {
+        outline: 2px solid #4fd1b5;
+        outline-offset: 1px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

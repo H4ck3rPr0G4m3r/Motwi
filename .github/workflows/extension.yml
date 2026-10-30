@@ -1,0 +1,48 @@
+name: extension
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            ui/package-lock.json
+            extension/package-lock.json
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Build the window UI (it serves the pairing page)
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install the browser
+        run: npx playwright install chromium
+
+      - name: Browser tests
+        run: npm run e2e

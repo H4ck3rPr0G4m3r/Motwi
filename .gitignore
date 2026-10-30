@@ -19,6 +19,8 @@ dist/
 # Node / extension
 node_modules/
 extension/dist/
+extension/test-results/
+extension/playwright-report/
 
 # OS / IDE
 .DS_Store

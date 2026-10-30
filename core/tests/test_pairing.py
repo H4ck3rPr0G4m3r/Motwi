@@ -194,6 +194,35 @@ async def test_revoking_ends_the_token_and_closes_its_socket(client):
     assert resp.status == 404
 
 
+async def test_odd_tokens_are_refused_rather_than_crashing(client):
+    await pair(client)
+    resp = await client.get("/api/status", headers={"Authorization": "Bearer t\u00f6ken"})
+    assert resp.status == 401
+    code = await start_code(client)
+    resp = await client.post(
+        "/api/pair", json={"code": "c\u00f6de", "label": "x"}, headers=EXTENSION
+    )
+    assert resp.status == 410
+    assert code
+
+    for hello in ({"token": 123}, {"token": "t\u00f6ken"}, ["token"], "plain"):
+        ws = await client.ws_connect("/api/events")
+        await ws.send_str(json.dumps(hello))
+        await ws.receive()
+        assert ws.close_code == 4401, hello
+
+
+async def test_an_extension_can_remove_itself_but_not_others(client):
+    one = await pair(client, "One")
+    two = await pair(client, "Two")
+    assert (await client.post("/api/extension/leave", headers=window())).status == 404
+    assert (await client.post("/api/extension/leave", headers=bearer(one["token"]))).status == 200
+    assert (await client.get("/api/status", headers=bearer(one["token"]))).status == 401
+    assert (await client.get("/api/status", headers=bearer(two["token"]))).status == 200
+    listed = await (await client.get("/api/extension", headers=window())).json()
+    assert [c["label"] for c in listed["clients"]] == ["Two"]
+
+
 async def test_the_socket_refuses_web_pages_and_the_window_token_from_an_extension(client):
     token = (await pair(client))["token"]
     with pytest.raises(WSServerHandshakeError):

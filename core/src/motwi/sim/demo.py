@@ -1,6 +1,6 @@
 """A demo of the app window over sample data, for UI work and screenshots.
 
-    uv run python -m motwi.sim.demo [--setup] [--port 47900] [--channel name]
+    uv run python -m motwi.sim.demo [--setup] [--empty] [--port 47900] [--channel name]
 
 It uses a throwaway data folder and an in-memory credential store, never your real
 Motwi data or Twitch account. Twitch is faked as connected, and buttons act on a fake
@@ -273,7 +273,7 @@ def demo_routes(motwi: Motwi, twitch: FakeTwitch) -> list[web.RouteDef]:
     return [web.post("/api/demo/action", add_action), web.post("/api/demo/fail", set_failing)]
 
 
-async def main(port: int, setup: bool, channel: str) -> None:
+async def main(port: int, setup: bool, channel: str, empty: bool = False) -> None:
     home = Path(tempfile.mkdtemp(prefix="motwi-demo-"))
     store = await Store.open(home / "motwi.db")
     secrets = MemorySecrets()
@@ -282,7 +282,8 @@ async def main(port: int, setup: bool, channel: str) -> None:
         TokenStore(secrets).save("streamer", Token("x", "y", time.time() + 3600, (), "42", channel))
     if not setup:
         await seed_if_empty(store)
-        await seed(store)
+        if not empty:
+            await seed(store)
         await store.save_settings(
             replace(
                 await store.get_settings(),
@@ -322,5 +323,6 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=47900)
     parser.add_argument("--setup", action="store_true", help="start at first-run setup")
     parser.add_argument("--channel", default="official_h4ck3r", help="the fake streamer's login")
+    parser.add_argument("--empty", action="store_true", help="no sample actions")
     args = parser.parse_args()
-    asyncio.run(main(args.port, args.setup, args.channel.lower()))
+    asyncio.run(main(args.port, args.setup, args.channel.lower(), args.empty))

@@ -15,6 +15,8 @@ cd ../core && uv sync && uv run motwi
 
 A window opens with the first-run setup: connect Twitch, pick an AI provider and paste its key, then review the starter rules. Closing the window keeps Motwi running in the tray. Windows 11 puts new tray icons under the `^` arrow; drag it out to keep it visible. Quit Motwi from that icon. Data lives in `%APPDATA%\Motwi`, and keys and Twitch tokens are kept in Windows Credential Manager.
 
+To see Motwi inside Twitch chat, build the extension (`cd extension && npm ci && npm run build`), then follow the Browser extension steps in Settings: load `extension/dist` as an unpacked extension in Chrome, Edge, Brave or Opera, and press Connect this browser. It activates only on your own channel's chat.
+
 Other commands: `motwi run` moderates headless in the terminal, and `motwi login`, `motwi logout` and `motwi set-key` manage accounts and keys from the command line.
 
 ## Development
@@ -22,7 +24,10 @@ Other commands: `motwi run` moderates headless in the terminal, and `motwi login
 ```sh
 cd core && uv run pytest && uv run ruff check .
 cd ui && npm run check
+cd extension && npm run check && npm test
 ```
+
+The extension also has browser tests. `npm run e2e` runs the built extension in real Chromium against a real demo core, with a copy of Twitch's chat page. `npm run live` runs it on a live public Twitch chat, marking real messages for its own view only: actions go to a fake, and the browser is anonymous, so nothing reaches Twitch. Both need `extension/dist` and `ui/dist` built, and `npx playwright install chromium` once.
 
 To work on the UI against sample data, run the demo core. It uses a throwaway data folder and never touches your real data or Twitch:
 
@@ -30,7 +35,7 @@ To work on the UI against sample data, run the demo core. It uses a throwaway da
 cd core && uv run python -m motwi.sim.demo          # add --setup to start at first-run setup
 ```
 
-Then open the printed address. For hot reload, run `MOTWI_PORT=47900 npm run dev` in `ui/` and open `http://localhost:5173/#k=demo`. The dev server proxies the API to that core.
+Then open the printed address. For hot reload, run `MOTWI_PORT=47900 npm run dev` in `ui/` and open `http://localhost:5173/#k=demo`. The dev server proxies the API to that core. `--channel name` sets which channel the extension treats as yours, and `--empty` starts without sample actions.
 
 ## Try the engine
 

@@ -1,0 +1,123 @@
+/* Added to Twitch's page. Fonts have to be declared here because @font-face doesn't work
+   inside a shadow root. Custom properties inherit into the shadow roots, so theming needs
+   no script: the tokens follow whatever theme Twitch sets on the chat. */
+
+@font-face {
+  font-family: "Motwi Inter";
+  font-weight: 400;
+  font-display: swap;
+  src: url("chrome-extension://__MSG_@@extension_id__/fonts/inter-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Motwi Inter";
+  font-weight: 600;
+  font-display: swap;
+  src: url("chrome-extension://__MSG_@@extension_id__/fonts/inter-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Motwi Inter";
+  font-weight: 700;
+  font-display: swap;
+  src: url("chrome-extension://__MSG_@@extension_id__/fonts/inter-latin-700-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Motwi Mono";
+  font-weight: 600;
+  font-display: swap;
+  src: url("chrome-extension://__MSG_@@extension_id__/fonts/jetbrains-mono-latin-600-normal.woff2") format("woff2");
+}
+
+:root,
+.tw-root--theme-dark,
+[data-a-target="chat-theme-dark"] {
+  --mw-bar: #141417;
+  --mw-surface: #1f1f23;
+  --mw-chip: #26262c;
+  --mw-control: #2f2f35;
+  --mw-control-hover: #3a3a42;
+  --mw-line: #2f2f35;
+  --mw-text: #efeff1;
+  --mw-muted: #adadb8;
+  --mw-dim: #8f8f99;
+  --mw-accent: #4fd1b5;
+  --mw-accent-text: #4fd1b5;
+  --mw-accent-soft: #1c2422;
+  --mw-accent-ink: #06231d;
+  --mw-del: #3987e5;
+  --mw-warn: #c98500;
+  --mw-timeout: #d95926;
+  --mw-ban: #d55181;
+  --mw-ban-ink: #1a0507;
+  --mw-req: #221a1c;
+  --mw-req-line: #4a2a2f;
+  --mw-ok: #1a1f1e;
+  --mw-ok-line: #2c3d39;
+  --mw-caution: #e0a63a;
+  --mw-caution-bg: #2a1d14;
+  --mw-caution-line: #4a3220;
+  --mw-error: #f0646a;
+  --mw-error-bg: #3a1d20;
+  --mw-error-line: #5a2a2e;
+  --mw-track: #3a3a42;
+  --mw-knob: #8f8f99;
+  --mw-gone: #8f8f99;
+  --mw-gone-line: #5a5a64;
+  --mw-shadow: rgb(0 0 0 / 0.6);
+}
+
+.tw-root--theme-light,
+[data-a-target="chat-theme-light"] {
+  --mw-bar: #f7f7f8;
+  --mw-surface: #ffffff;
+  --mw-chip: #efeff1;
+  --mw-control: #e6e6ea;
+  --mw-control-hover: #d8d8dd;
+  --mw-line: #dedee3;
+  --mw-text: #0e0e10;
+  --mw-muted: #53535f;
+  --mw-dim: #6b6b76;
+  --mw-accent: #4fd1b5;
+  --mw-accent-text: #0b7c66;
+  --mw-accent-soft: #e6f7f3;
+  --mw-accent-ink: #06231d;
+  --mw-del: #2a6fc9;
+  --mw-warn: #946200;
+  --mw-timeout: #c04a18;
+  --mw-ban: #b83a6b;
+  --mw-ban-ink: #ffffff;
+  --mw-req: #fdf2f6;
+  --mw-req-line: #ecc3d3;
+  --mw-ok: #eef8f5;
+  --mw-ok-line: #bfe5da;
+  --mw-caution: #7d5300;
+  --mw-caution-bg: #fdf4e0;
+  --mw-caution-line: #edd9a8;
+  --mw-error: #b3262d;
+  --mw-error-bg: #fdecec;
+  --mw-error-line: #f2c4c6;
+  --mw-track: #c9c9cf;
+  --mw-knob: #ffffff;
+  --mw-gone: #6b6b76;
+  --mw-gone-line: #9a9aa3;
+  --mw-shadow: rgb(20 20 30 / 0.22);
+}
+
+/* Lines Motwi acted on. Only extension users see this; viewers see Twitch's normal chat. */
+
+.chat-line__message[data-motwi-state="gone"] .chat-author__display-name,
+.chat-line__message[data-motwi-state="gone"] [data-a-target="chat-line-message-body"],
+.chat-line__message[data-motwi-state="gone"] [data-a-target="chat-line-message-body"] * {
+  color: var(--mw-gone) !important;
+  text-decoration: line-through;
+  text-decoration-color: var(--mw-gone-line);
+}
+
+.chat-line__message[data-motwi-state="suggested"] {
+  background: var(--mw-accent-soft);
+  box-shadow: inset 2px 0 0 var(--mw-accent);
+}
+
+motwi-mark,
+motwi-bar {
+  display: block;
+}

@@ -47,7 +47,7 @@ class Pairing:
 
     async def redeem(self, code: str, label: str) -> tuple[ClientRecord, str]:
         current = self._code
-        if current is None or not hmac.compare_digest(current[0], code):
+        if current is None or not hmac.compare_digest(current[0].encode(), code.encode()):
             # a wrong guess doesn't burn the real code
             raise PairingError("This link has already been used. Connect again from Motwi.")
         self._code = None
