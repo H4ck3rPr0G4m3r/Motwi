@@ -23,6 +23,13 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
+      # first: the extension shares code with ui/, and it also serves the pairing page
+      - name: Build the window UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
       - name: Install dependencies
         run: npm ci
 
@@ -34,12 +41,6 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      - name: Build the window UI (it serves the pairing page)
-        working-directory: ui
-        run: |
-          npm ci
-          npm run build
 
       - name: Install the browser
         run: npx playwright install chromium
