@@ -22,6 +22,7 @@ class BlockedWord:
     phrase: str
     base_index: int = -1
     ceiling: Ceiling = Ceiling.TIMEOUT
+    hidden: bool = False  # shown only as a count, for slurs
 
 
 def normalize_tokens(text: str) -> list[str]:

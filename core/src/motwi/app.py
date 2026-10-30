@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import time
+from collections import Counter
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import replace
 from typing import Any, TextIO
@@ -13,10 +14,16 @@ from motwi.ai.client import LLMClient
 from motwi.ai.providers import PROVIDERS, client_for
 from motwi.ai.scorer import AIState, Scorer
 from motwi.engine.offenses import OffenseTracker
-from motwi.events import ActionChanged, AIStateChanged, BanRequestReminder, EventBus
+from motwi.events import (
+    ActionChanged,
+    AIStateChanged,
+    BanRequestReminder,
+    EventBus,
+    StreamChanged,
+)
 from motwi.filters.spam import SpamFilter
 from motwi.live import LiveConfig
-from motwi.models import StreamContext
+from motwi.models import ChatMessage, StreamContext
 from motwi.moderation import Executor, ModerationService
 from motwi.pipeline import Pipeline
 from motwi.settings import ProviderConfig, Settings
@@ -42,32 +49,65 @@ async def seed_if_empty(store: Store) -> bool:
     return True
 
 
-def resolve_ai(
+def _env_primary(env: Mapping[str, str]) -> ProviderConfig:
+    name = env.get("MOTWI_AI_PROVIDER", "gemini")
+    if name not in PROVIDERS:
+        raise ValueError(f"MOTWI_AI_PROVIDER must be one of {', '.join(PROVIDERS)}")
+    model = env.get("MOTWI_AI_MODEL") or PROVIDERS[name].default_model
+    if not model:
+        raise ValueError("MOTWI_AI_MODEL is required for a custom provider")
+    return ProviderConfig(name, model, env.get("MOTWI_AI_BASE_URL") or None)  # type: ignore[arg-type]
+
+
+def ai_key(
+    slot: str, cfg: ProviderConfig, env: Mapping[str, str], secrets: SecretStore
+) -> str | None:
+    """A provider's key: the environment first, then Credential Manager."""
+    env_name = cfg.api_key_env if slot == "primary" else "MOTWI_AI_BACKUP_KEY"
+    return env.get(env_name) or secrets.get(ai_key_name(slot))  # type: ignore[arg-type]
+
+
+def effective_ai(
     settings: Settings, env: Mapping[str, str], secrets: SecretStore
-) -> tuple[Settings, dict[ProviderConfig, str]]:
-    """Pick providers and keys. Keys come from env vars first, then the credential store."""
+) -> tuple[Settings, dict[ProviderConfig, str], str | None]:
+    """The providers that can run, their keys, and what is missing (None if nothing).
+
+    A provider without a key is dropped, so blocked words and the spam filter keep
+    working while the AI is off.
+    """
+    problem: str | None = None
+    keys: dict[ProviderConfig, str] = {}
     primary = settings.primary
     if primary is None:
-        name = env.get("MOTWI_AI_PROVIDER", "gemini")
-        if name not in PROVIDERS:
-            raise ValueError(f"MOTWI_AI_PROVIDER must be one of {', '.join(PROVIDERS)}")
-        model = env.get("MOTWI_AI_MODEL") or PROVIDERS[name].default_model
-        if not model:
-            raise ValueError("MOTWI_AI_MODEL is required for a custom provider")
-        primary = ProviderConfig(name, model, env.get("MOTWI_AI_BASE_URL") or None)  # type: ignore[arg-type]
-    key = env.get(primary.api_key_env) or secrets.get(ai_key_name("primary"))
-    if not key:
-        raise ValueError("no AI key: run `motwi set-key` or set MOTWI_AI_KEY")
-    keys = {primary: key}
+        try:
+            primary = _env_primary(env)
+        except ValueError as e:
+            primary, problem = None, str(e)
+    if primary is not None:
+        key = ai_key("primary", primary, env, secrets)
+        if key:
+            keys[primary] = key
+        else:
+            primary, problem = None, "no AI key: run `motwi set-key` or set MOTWI_AI_KEY"
     backup = settings.backup
     if backup is not None:
-        backup_key = secrets.get(ai_key_name("backup")) or env.get("MOTWI_AI_BACKUP_KEY")
+        backup_key = ai_key("backup", backup, env, secrets)
         if backup_key:
             keys[backup] = backup_key
         else:
             log.warning("backup AI provider has no key; running without a backup")
             backup = None
-    return replace(settings, primary=primary, backup=backup), keys
+    return replace(settings, primary=primary, backup=backup), keys, problem
+
+
+def resolve_ai(
+    settings: Settings, env: Mapping[str, str], secrets: SecretStore
+) -> tuple[Settings, dict[ProviderConfig, str]]:
+    """Like effective_ai, but a missing primary is an error (the headless `motwi run`)."""
+    resolved, keys, problem = effective_ai(settings, env, secrets)
+    if resolved.primary is None:
+        raise ValueError(problem or "no AI provider configured")
+    return resolved, keys
 
 
 class MotwiApp:
@@ -82,10 +122,11 @@ class MotwiApp:
         clients: Callable[[ProviderConfig], LLMClient],
         self_user_ids: set[str],
         clock: Callable[[], float] = time.time,
+        bus: EventBus | None = None,
     ) -> None:
         self.store = store
         self.live = live
-        self.bus = EventBus()
+        self.bus = bus or EventBus()
         self.offenses = OffenseTracker()
         self._clock = clock
         self.moderation = ModerationService(
@@ -108,8 +149,22 @@ class MotwiApp:
             store=store,
             self_user_ids=self_user_ids,
             clock=clock,
+            on_checked=self._checked_one,
         )
         self._tasks: set[asyncio.Task] = set()
+        self._checked: Counter[tuple[str, str | None]] = Counter()
+
+    def _checked_one(self, msg: ChatMessage) -> None:
+        day = time.strftime("%Y-%m-%d", time.localtime(msg.ts))
+        self._checked[(day, self.live.stream.stream_id)] += 1
+
+    async def flush_counts(self) -> None:
+        counts, self._checked = self._checked, Counter()
+        try:
+            await self.store.add_checked(dict(counts))
+        except Exception:
+            self._checked.update(counts)
+            raise
 
     def _ai_state(self, state: AIState, detail: str) -> None:
         self.bus.publish(AIStateChanged(state, detail))
@@ -117,20 +172,37 @@ class MotwiApp:
     # Twitch events
 
     def on_event(self, sub_type: str, event: dict[str, Any], timestamp: str) -> None:
+        now = parse_ts(timestamp, self._clock())
         if sub_type == "channel.chat.message":
-            msg = chat_message(event, parse_ts(timestamp, self._clock()))
+            if self.live.settings.paused:
+                return
+            msg = chat_message(event, now)
             if msg is not None:
                 self._spawn(self.pipeline.handle(msg), f"message {msg.id}")
-        elif sub_type == "channel.update":
+            return
+        stream = self.live.stream
+        if sub_type == "channel.update":
             self.live.stream = replace(
-                self.live.stream, title=event.get("title"), game=event.get("category_name")
+                stream, title=event.get("title"), game=event.get("category_name")
             )
         elif sub_type == "stream.online":
-            self.live.stream = replace(self.live.stream, stream_id=event.get("id"))
+            stream_id = event.get("id")
+            self.live.stream = replace(stream, stream_id=stream_id)
             self.pipeline.reset_stream()
+            if stream_id:
+                started = parse_ts(event.get("started_at") or timestamp, now)
+                self._spawn(
+                    self.store.stream_started(stream_id, started, stream.title, stream.game),
+                    "stream start",
+                )
         elif sub_type == "stream.offline":
-            self.live.stream = replace(self.live.stream, stream_id=None)
+            self.live.stream = replace(stream, stream_id=None)
             self.pipeline.reset_stream()  # offenses reset when the stream ends (spec 5.3)
+            if stream.stream_id:
+                self._spawn(self.store.stream_ended(stream.stream_id, now), "stream end")
+        else:
+            return
+        self.bus.publish(StreamChanged(self.live.stream))
 
     def _spawn(self, coro: Awaitable[Any], what: str) -> None:
         task = asyncio.ensure_future(coro)
@@ -156,6 +228,7 @@ class MotwiApp:
         last_purge: float | None = None
         while True:
             try:
+                await self.flush_counts()
                 await self.moderation.expire_overdue()
                 now = self._clock()
                 if last_purge is None or now - last_purge >= PURGE_EVERY_S:
@@ -171,6 +244,10 @@ class MotwiApp:
     async def aclose(self) -> None:
         await self.drain()
         await self.scorer.aclose()
+        try:
+            await self.flush_counts()
+        except Exception:
+            log.exception("could not save checked-message counts")
 
 
 async def print_events(bus: EventBus, out: TextIO) -> None:

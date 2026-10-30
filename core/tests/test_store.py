@@ -152,3 +152,39 @@ async def test_v1_database_upgrades_and_keeps_level(tmp_path):
         assert (await store.get_action(rec.id)).level == 3
     finally:
         await store.close()
+
+
+async def test_history_filters_combine(store):
+    from motwi.store import ActionFilter
+
+    await store.insert_action(make_new_action(message_text="100% legit", user_login="a"))
+    await store.insert_action(make_new_action(message_text="hello", actor="mod1"))
+    await store.insert_action(make_new_action(kind=Kind.TIMEOUT, user_login="b"))
+    by_text = await store.list_actions(where=ActionFilter(query="100%"))
+    assert [a.message_text for a in by_text] == ["100% legit"]
+    assert await store.list_actions(where=ActionFilter(query="_")) == []
+    by_actor = await store.list_actions(where=ActionFilter(actor="motwi"))
+    assert len(by_actor) == 2
+    mods = await store.list_actions(where=ActionFilter(actor="mod1"))
+    assert [a.actor for a in mods] == ["mod1"]
+    kinds = await store.list_actions(where=ActionFilter(kinds=(Kind.TIMEOUT,), user_login="B"))
+    assert [a.user_login for a in kinds] == ["b"]
+
+
+async def test_streams_and_checked_counts(store):
+    await store.stream_started("s1", 100.0, "t", "g")
+    await store.stream_started("s1", 100.0, "t2", "g")  # a reconnect while live
+    await store.stream_ended("s1", 200.0)
+    [s] = await store.list_streams()
+    assert (s.title, s.ended_at) == ("t2", 200.0)
+    await store.add_checked({("2026-10-27", "s1"): 3, ("2026-10-28", None): 2})
+    await store.add_checked({("2026-10-27", "s1"): 1})
+    assert await store.count_checked() == 6
+    assert await store.count_checked(stream_id="s1") == 4
+    assert await store.count_checked(since_day="2026-10-28") == 2
+
+
+async def test_hidden_blocked_word_round_trips(store):
+    await store.add_blocked("slur", hidden=True)
+    [w] = await store.list_blocked()
+    assert w.hidden is True

@@ -4,6 +4,7 @@ import asyncio
 import time
 from collections import deque
 from collections.abc import Callable
+from dataclasses import replace
 
 from motwi.ai.prompt import BatchItem
 from motwi.ai.scorer import Scorer
@@ -11,7 +12,7 @@ from motwi.engine.decide import NO_ACTION, Plan, decide_ai, decide_filter
 from motwi.engine.offenses import OffenseTracker
 from motwi.filters.spam import SpamFilter, SpamVerdict
 from motwi.live import LiveConfig
-from motwi.models import Ceiling, ChatMessage, Source, Unchecked
+from motwi.models import Ceiling, ChatMessage, Kind, Source, Unchecked
 from motwi.moderation import ModerationService, Outcome
 from motwi.store import ActionRecord, Store
 
@@ -31,6 +32,7 @@ class Pipeline:
         store: Store,
         self_user_ids: set[str],
         clock: Callable[[], float] = time.time,
+        on_checked: Callable[[ChatMessage], None] | None = None,
     ) -> None:
         self._live = live
         self._spam = spam
@@ -40,6 +42,7 @@ class Pipeline:
         self._store = store
         self._self_user_ids = self_user_ids
         self._clock = clock
+        self._on_checked = on_checked
         self._context: deque[ChatMessage] = deque(maxlen=CONTEXT_BUFFER)
         self._known: set[str] = set()
         self._user_locks: dict[str, asyncio.Lock] = {}
@@ -62,6 +65,8 @@ class Pipeline:
 
         if self._exempt(msg):
             return None
+        if self._on_checked is not None:
+            self._on_checked(msg)
 
         live = self._live
         ladder = live.settings.ladder
@@ -125,6 +130,8 @@ class Pipeline:
                 last_index=last,
                 vip_leeway=leeway,
             )
+            if plan.kind is Kind.WARN and not self._live.settings.delete_on_warn:
+                plan = replace(plan, delete=False)
             return Outcome(Source.AI, plan, verdict.score, verdict.rule_id, verdict.reason)
 
         return await self._act(msg, recorded, ai_outcome)

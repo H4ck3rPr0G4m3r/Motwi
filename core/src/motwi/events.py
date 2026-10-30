@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import dataclass
 
+from motwi.models import StreamContext
 from motwi.store import ActionRecord
 
 
@@ -22,7 +23,32 @@ class BanRequestReminder:
     action: ActionRecord
 
 
-Event = ActionChanged | AIStateChanged | BanRequestReminder
+@dataclass(frozen=True)
+class StreamChanged:
+    stream: StreamContext
+
+
+@dataclass(frozen=True)
+class StatusChanged:
+    """Something in the app's status changed (Twitch, engine, AI setup); re-read it."""
+
+
+@dataclass(frozen=True)
+class LoginFinished:
+    role: str
+    ok: bool
+    login: str | None
+    error: str | None
+
+
+Event = (
+    ActionChanged
+    | AIStateChanged
+    | BanRequestReminder
+    | StreamChanged
+    | StatusChanged
+    | LoginFinished
+)
 
 
 class EventBus:

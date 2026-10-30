@@ -284,3 +284,37 @@ async def test_suggest_only_second_ban_request_merges(svc, ex, live):
     assert second.id == first.id and second.status is Status.SUGGESTED
     assert second.context == ["ctx", "second text"]
     assert ex.calls == []
+
+
+async def test_retry_runs_a_failed_action_again(svc, ex, offenses):
+    ex.fail_next = "timeout"
+    failed = await svc.apply(msg(), TIMEOUT, [])
+    assert failed.status is Status.FAILED
+    done = await svc.retry(failed.id)
+    assert done.status is Status.DONE and done.error is None
+    assert ("timeout", "u1", 60, "Motwi: insult") in ex.calls
+    assert offenses.last_index("u1", time.time()) == 1
+
+
+async def test_retry_only_failed_actions(svc):
+    record = await svc.apply(msg(), TIMEOUT, [])
+    with pytest.raises(AlreadyResolved):
+        await svc.retry(record.id)
+
+
+async def test_expired_request_can_still_be_approved_or_denied(store, ex, bus, live, offenses):
+    clock = [1000.0]
+    svc = ModerationService(
+        store=store, executor=ex, bus=bus, live=live, offenses=offenses, clock=lambda: clock[0]
+    )
+    first = await svc.apply(msg(), BAN, [])
+    second = await svc.apply(msg(user_id="u2", login="viewer2", mid="m2"), BAN, [])
+    clock[0] = first.created_at + 10_000
+    await svc.expire_overdue()
+    ex.calls.clear()
+    approved = await svc.approve(first.id, "streamer")
+    assert approved.status is Status.DONE
+    assert ex.calls == [("ban", "u1", "Motwi (streamer): slurs")]
+    ex.calls.clear()
+    denied = await svc.deny(second.id, "streamer")
+    assert denied.status is Status.DENIED and ex.calls == []

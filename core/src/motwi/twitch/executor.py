@@ -1,6 +1,6 @@
 """The real Executor: moderation actions through Helix as the moderator account."""
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 
 from motwi.moderation import ExecutorError
 from motwi.twitch.auth import AuthExpired
@@ -14,9 +14,16 @@ def _cap(text: str) -> str:
 
 
 class HelixExecutor:
-    def __init__(self, helix: HelixClient, *, broadcaster_id: str) -> None:
+    def __init__(
+        self,
+        helix: HelixClient,
+        *,
+        broadcaster_id: str,
+        on_auth_expired: Callable[[], None] = lambda: None,
+    ) -> None:
         self._helix = helix
         self._b = broadcaster_id
+        self._on_auth_expired = on_auth_expired
 
     @property
     def _m(self) -> str:
@@ -33,7 +40,8 @@ class HelixExecutor:
                 return
             raise ExecutorError(str(e)) from e
         except AuthExpired as e:
-            raise ExecutorError("Twitch sign-in expired; run `motwi login`") from e
+            self._on_auth_expired()
+            raise ExecutorError("Twitch sign-in expired; reconnect Twitch") from e
 
     async def delete_message(self, message_id: str) -> None:
         await self._run(self._helix.delete_message(self._b, self._m, message_id), ok_404=True)

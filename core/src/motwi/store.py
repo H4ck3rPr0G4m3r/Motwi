@@ -7,7 +7,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any, Literal, Self, TypeVar
 from uuid import uuid4
@@ -93,7 +93,29 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE actions ADD COLUMN level INTEGER;
     """,
+    # the app: hidden blocked words, stream boundaries, checked-message counts
+    """
+    ALTER TABLE blocked_words ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE streams (
+        id TEXT PRIMARY KEY,
+        started_at REAL NOT NULL,
+        ended_at REAL,
+        title TEXT,
+        game TEXT
+    );
+    CREATE TABLE message_counts (
+        day TEXT NOT NULL,
+        stream_id TEXT NOT NULL DEFAULT '',
+        checked INTEGER NOT NULL,
+        PRIMARY KEY (day, stream_id)
+    );
+    CREATE INDEX idx_actions_stream ON actions(stream_id);
+    CREATE INDEX idx_usage_ts ON ai_usage(ts);
+    """,
 ]
+
+# what a stats total counts: everything except suggestions nobody took
+_COUNTED = ("pending", "done", "failed", "undone", "denied", "expired")
 
 
 @dataclass(frozen=True)
@@ -166,6 +188,39 @@ class UsageTotals:
     cost_usd: float
 
 
+@dataclass(frozen=True)
+class StreamRecord:
+    id: str
+    started_at: float
+    ended_at: float | None
+    title: str | None
+    game: str | None
+
+
+@dataclass(frozen=True)
+class ActionFilter:
+    """History filters. Every field narrows the result; None means any."""
+
+    kinds: tuple[Kind, ...] | None = None
+    statuses: tuple[Status, ...] | None = None
+    rule_id: str | None = None
+    source: Source | None = None
+    user_login: str | None = None
+    stream_id: str | None = None
+    actor: str | None = None  # "motwi" matches actions nobody took by hand
+    query: str | None = None
+    since: float | None = None
+
+
+@dataclass(frozen=True)
+class Chatter:
+    user_id: str
+    user_login: str
+    actions: int
+    last_at: float
+    last_kind: Kind
+
+
 _NEW_ACTION_COLS = [f.name for f in fields(NewAction)]
 _ACTION_COLS = [f.name for f in fields(ActionRecord)]
 _SELECT_ACTION = ", ".join(f'"{c}"' for c in _ACTION_COLS)
@@ -179,6 +234,42 @@ def _encode_action_value(name: str, value: Any) -> Any:
     if isinstance(value, (Source, Kind, Status)):
         return value.value
     return value
+
+
+def _filter_sql(f: ActionFilter) -> tuple[list[str], list[Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if f.kinds is not None:
+        clauses.append(f"kind IN ({', '.join('?' * len(f.kinds))})")
+        params += [k.value for k in f.kinds]
+    if f.statuses is not None:
+        clauses.append(f"status IN ({', '.join('?' * len(f.statuses))})")
+        params += [s.value for s in f.statuses]
+    for column, value in (
+        ("rule_id", f.rule_id),
+        ("source", f.source.value if f.source else None),
+        ("user_login", f.user_login.lower() if f.user_login else None),
+        ("stream_id", f.stream_id),
+    ):
+        if value is not None:
+            clauses.append(f"{column} = ?")
+            params.append(value)
+    if f.actor == "motwi":
+        clauses.append("actor IS NULL")
+    elif f.actor is not None:
+        clauses.append("actor = ?")
+        params.append(f.actor)
+    if f.query:
+        like = "%" + f.query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        clauses.append(
+            "(message_text LIKE ? ESCAPE '\\' OR user_login LIKE ? ESCAPE '\\' "
+            "OR reason LIKE ? ESCAPE '\\')"
+        )
+        params += [like, like, like]
+    if f.since is not None:
+        clauses.append("created_at >= ?")
+        params.append(f.since)
+    return clauses, params
 
 
 def _action_from_row(row: tuple) -> ActionRecord:
@@ -309,20 +400,24 @@ class Store:
     async def list_blocked(self) -> list[BlockedWord]:
         rows = await self._run(
             lambda c: c.execute(
-                "SELECT id, phrase, base_index, ceiling FROM blocked_words ORDER BY seq"
+                "SELECT id, phrase, base_index, ceiling, hidden FROM blocked_words ORDER BY seq"
             ).fetchall()
         )
-        return [BlockedWord(r[0], r[1], r[2], Ceiling(r[3])) for r in rows]
+        return [BlockedWord(r[0], r[1], r[2], Ceiling(r[3]), bool(r[4])) for r in rows]
 
     async def add_blocked(
-        self, phrase: str, base_index: int = -1, ceiling: Ceiling = Ceiling.TIMEOUT
+        self,
+        phrase: str,
+        base_index: int = -1,
+        ceiling: Ceiling = Ceiling.TIMEOUT,
+        hidden: bool = False,
     ) -> BlockedWord:
-        word = BlockedWord(uuid4().hex[:8], phrase, base_index, ceiling)
+        word = BlockedWord(uuid4().hex[:8], phrase, base_index, ceiling, hidden)
         await self._write(
             lambda c: c.execute(
-                "INSERT INTO blocked_words(id, phrase, base_index, ceiling, seq) "
-                "VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM blocked_words))",
-                (word.id, phrase, base_index, ceiling.value),
+                "INSERT INTO blocked_words(id, phrase, base_index, ceiling, hidden, seq) "
+                "VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM blocked_words))",
+                (word.id, phrase, base_index, ceiling.value, int(hidden)),
             )
         )
         return word
@@ -412,22 +507,75 @@ class Store:
         before_id: int | None = None,
         user_login: str | None = None,
         status: Status | None = None,
+        where: ActionFilter | None = None,
     ) -> list[ActionRecord]:
-        where: list[str] = []
-        params: list[Any] = []
-        if before_id is not None:
-            where.append("id < ?")
-            params.append(before_id)
+        f = where or ActionFilter()
         if user_login is not None:
-            where.append("user_login = ?")
-            params.append(user_login)
+            f = replace(f, user_login=user_login)
         if status is not None:
-            where.append("status = ?")
-            params.append(status.value)
-        clause = f"WHERE {' AND '.join(where)}" if where else ""
+            f = replace(f, statuses=(status,))
+        clauses, params = _filter_sql(f)
+        if before_id is not None:
+            clauses.append("id < ?")
+            params.append(before_id)
+        clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = f"SELECT {_SELECT_ACTION} FROM actions {clause} ORDER BY id DESC LIMIT ?"
         rows = await self._run(lambda c: c.execute(sql, [*params, limit]).fetchall())
         return [_action_from_row(r) for r in rows]
+
+    async def recent_chatters(self, limit: int = 20) -> list[Chatter]:
+        """Chatters Motwi acted on, most recent first, with their action count."""
+        sql = (
+            "SELECT user_id, user_login, COUNT(*), MAX(created_at), "
+            "(SELECT kind FROM actions b WHERE b.user_id = a.user_id ORDER BY id DESC LIMIT 1) "
+            f"FROM actions a WHERE status IN ({', '.join('?' * len(_COUNTED))}) "
+            "GROUP BY user_id ORDER BY MAX(created_at) DESC LIMIT ?"
+        )
+        rows = await self._run(lambda c: c.execute(sql, [*_COUNTED, limit]).fetchall())
+        return [Chatter(r[0], r[1], r[2], r[3], Kind(r[4])) for r in rows]
+
+    # stats
+
+    async def action_counts(
+        self, *, since: float | None = None, stream_id: str | None = None
+    ) -> dict[tuple[Kind, Status], int]:
+        clauses, params = _filter_sql(ActionFilter(since=since, stream_id=stream_id))
+        clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = await self._run(
+            lambda c: c.execute(
+                f"SELECT kind, status, COUNT(*) FROM actions {clause} GROUP BY kind, status",
+                params,
+            ).fetchall()
+        )
+        return {(Kind(r[0]), Status(r[1])): r[2] for r in rows}
+
+    async def actions_per_day(
+        self, *, since: float | None = None, stream_id: str | None = None
+    ) -> list[tuple[str, Kind, int]]:
+        """(local day, kind, count) for counted actions, oldest day first."""
+        clauses, params = _filter_sql(
+            ActionFilter(since=since, stream_id=stream_id, statuses=tuple(map(Status, _COUNTED)))
+        )
+        sql = (
+            "SELECT date(created_at, 'unixepoch', 'localtime') AS day, kind, COUNT(*) "
+            f"FROM actions WHERE {' AND '.join(clauses)} GROUP BY day, kind ORDER BY day"
+        )
+        rows = await self._run(lambda c: c.execute(sql, params).fetchall())
+        return [(r[0], Kind(r[1]), r[2]) for r in rows]
+
+    async def triggers(
+        self, *, since: float | None = None, stream_id: str | None = None
+    ) -> list[tuple[Source, str | None, int]]:
+        """(source, rule id, count) for counted actions, most frequent first."""
+        clauses, params = _filter_sql(
+            ActionFilter(since=since, stream_id=stream_id, statuses=tuple(map(Status, _COUNTED)))
+        )
+        sql = (
+            "SELECT source, rule_id, COUNT(*) AS n FROM actions "
+            f"WHERE {' AND '.join(clauses)} GROUP BY source, rule_id ORDER BY n DESC"
+        )
+        rows = await self._run(lambda c: c.execute(sql, params).fetchall())
+        return [(Source(r[0]), r[1], r[2]) for r in rows]
 
     async def find_pending_ban(
         self, user_id: str, statuses: tuple[Status, ...] = (Status.PENDING,)
@@ -462,8 +610,18 @@ class Store:
             )
         )
 
-    async def usage_totals(self, since: float | None = None) -> UsageTotals:
-        where, params = ("WHERE ts >= ?", (since,)) if since is not None else ("", ())
+    async def usage_totals(
+        self, since: float | None = None, stream_id: str | None = None
+    ) -> UsageTotals:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if since is not None:
+            clauses.append("ts >= ?")
+            params.append(since)
+        if stream_id is not None:
+            clauses.append("stream_id = ?")
+            params.append(stream_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         row = await self._run(
             lambda c: c.execute(
                 "SELECT COUNT(*), COALESCE(SUM(messages), 0), COALESCE(SUM(prompt_tokens), 0), "
@@ -473,6 +631,74 @@ class Store:
             ).fetchone()
         )
         return UsageTotals(row[0], row[1], row[2], row[3], float(row[4]))
+
+    # streams
+
+    async def stream_started(
+        self, stream_id: str, started_at: float, title: str | None, game: str | None
+    ) -> None:
+        await self._write(
+            lambda c: c.execute(
+                "INSERT INTO streams(id, started_at, title, game) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET title=excluded.title, game=excluded.game",
+                (stream_id, started_at, title, game),
+            )
+        )
+
+    async def stream_ended(self, stream_id: str, ended_at: float) -> None:
+        await self._write(
+            lambda c: c.execute(
+                "UPDATE streams SET ended_at=? WHERE id=? AND ended_at IS NULL",
+                (ended_at, stream_id),
+            )
+        )
+
+    async def list_streams(
+        self, *, since: float | None = None, limit: int = 100
+    ) -> list[StreamRecord]:
+        where, params = ("WHERE started_at >= ?", [since]) if since is not None else ("", [])
+        rows = await self._run(
+            lambda c: c.execute(
+                "SELECT id, started_at, ended_at, title, game FROM streams "
+                f"{where} ORDER BY started_at DESC LIMIT ?",
+                [*params, limit],
+            ).fetchall()
+        )
+        return [StreamRecord(*r) for r in rows]
+
+    # checked-message counts
+
+    async def add_checked(self, counts: dict[tuple[str, str | None], int]) -> None:
+        """Adds to the checked counts, keyed by (local day YYYY-MM-DD, stream id)."""
+        rows = [(day, stream or "", n) for (day, stream), n in counts.items() if n]
+        if not rows:
+            return
+        await self._write(
+            lambda c: c.executemany(
+                "INSERT INTO message_counts(day, stream_id, checked) VALUES (?, ?, ?) "
+                "ON CONFLICT(day, stream_id) DO UPDATE SET checked = checked + excluded.checked",
+                rows,
+            )
+        )
+
+    async def count_checked(
+        self, *, since_day: str | None = None, stream_id: str | None = None
+    ) -> int:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if since_day is not None:
+            clauses.append("day >= ?")
+            params.append(since_day)
+        if stream_id is not None:
+            clauses.append("stream_id = ?")
+            params.append(stream_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        row = await self._run(
+            lambda c: c.execute(
+                f"SELECT COALESCE(SUM(checked), 0) FROM message_counts {where}", params
+            ).fetchone()
+        )
+        return row[0]
 
     # unchecked
 
@@ -498,6 +724,8 @@ class Store:
         def work(c: sqlite3.Connection) -> int:
             a = c.execute("DELETE FROM actions WHERE created_at < ?", (older_than_ts,)).rowcount
             u = c.execute("DELETE FROM unchecked WHERE ts < ?", (older_than_ts,)).rowcount
-            return a + u
+            day = time.strftime("%Y-%m-%d", time.localtime(older_than_ts))
+            n = c.execute("DELETE FROM message_counts WHERE day < ?", (day,)).rowcount
+            return a + u + n
 
         return await self._write(work)

@@ -91,6 +91,38 @@ class Scorer:
         self._wake.set()
         return await future
 
+    async def try_score(self, item: BatchItem, context: Sequence[ChatMessage]) -> Result:
+        """Score one message right away, for "Try a message".
+
+        It uses the same providers and failover as live scoring, but leaves the AI state
+        and the circuit breaker alone, so a test can't make live chat look unhealthy.
+        """
+        msg_id = item.message.id
+        settings = self._live.settings
+        req = build_request(
+            [item], context=context, rules=self._live.rules, stream=self._live.stream
+        )
+        pending = [_Pending(item, context, asyncio.get_running_loop().create_future(), 0.0)]
+        failures = []
+        for cfg in (settings.primary, settings.backup):
+            if cfg is None:
+                continue
+            verdicts, failure = await self._try_provider(cfg, req, pending)
+            if verdicts is not None:
+                return verdicts.get(msg_id) or Unchecked(msg_id, "missing_from_response")
+            failures.append(failure)
+        return Unchecked(msg_id, "; ".join(failures) or "ai_off")
+
+    async def reset_clients(self) -> None:
+        """Forget cached provider clients, so changed keys or models apply to the next batch."""
+        old, self._client_cache = self._client_cache, {}
+        self._primary_failures = 0
+        self._primary_open_until = None
+        for client in old.values():
+            close = getattr(client, "aclose", None)
+            if close is not None:
+                await close()
+
     async def aclose(self) -> None:
         self._closed = True
         tasks = [t for t in (self._flusher, *self._tasks) if t is not None]

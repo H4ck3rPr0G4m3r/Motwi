@@ -225,10 +225,10 @@ class ModerationService:
     async def approve(self, action_id: int, actor: str) -> ActionRecord:
         async with self._lock(action_id):
             record = await self._load(action_id)
-            if record.status not in (Status.PENDING, Status.SUGGESTED):
+            if record.status not in (Status.PENDING, Status.EXPIRED, Status.SUGGESTED):
                 raise AlreadyResolved(f"action {action_id} is {record.status.value}")
-            # A pending ban request already had its message deleted when it was raised.
-            already_deleted = record.status is Status.PENDING
+            # A raised ban request (pending or expired) had its message deleted back then.
+            already_deleted = record.status is not Status.SUGGESTED
             error: str | None = None
             try:
                 await self._run_plan(
@@ -252,15 +252,41 @@ class ModerationService:
                 self._record_offense(updated)
             return updated
 
+    async def retry(self, action_id: int) -> ActionRecord:
+        """Run a failed action again, unchanged and credited to whoever took it first."""
+        async with self._lock(action_id):
+            record = await self._load(action_id)
+            if record.status is not Status.FAILED:
+                raise AlreadyResolved(f"action {action_id} is {record.status.value}")
+            error: str | None = None
+            try:
+                await self._run_plan(
+                    message_id=record.message_id,
+                    user_id=record.user_id,
+                    user_login=record.user_login,
+                    kind=record.kind,
+                    delete=record.delete,
+                    duration_s=record.duration_s,
+                    reason=_twitch_reason(record.reason, record.actor),
+                )
+            except ExecutorError as e:
+                error = str(e)
+            updated = await self._update(
+                action_id, status=Status.FAILED if error else Status.DONE, error=error
+            )
+            if error is None:
+                self._record_offense(updated)
+            return updated
+
     async def deny(self, action_id: int, actor: str) -> ActionRecord:
         async with self._lock(action_id):
             record = await self._load(action_id)
             if record.status is Status.SUGGESTED:
                 return await self._update(action_id, status=Status.IGNORED, actor=actor)
-            if record.status is not Status.PENDING:
+            if record.status not in (Status.PENDING, Status.EXPIRED):
                 raise AlreadyResolved(f"action {action_id} is {record.status.value}")
-            if record.hold_applied:
-                await self._executor.unban(record.user_id)
+            if record.hold_applied and record.status is Status.PENDING:
+                await self._executor.unban(record.user_id)  # an expired hold is already over
             return await self._update(action_id, status=Status.DENIED, actor=actor)
 
     async def undo(self, action_id: int, actor: str) -> ActionRecord:
