@@ -83,6 +83,7 @@ class ApiAuth:
 MOTWI = web.AppKey("motwi", Motwi)
 AUTH = web.AppKey("auth", ApiAuth)
 PAIRING = web.AppKey("pairing", Pairing)
+SOCKETS = web.AppKey("sockets", set)
 ORIGINS = web.AppKey("origins", set)
 
 
@@ -608,7 +609,10 @@ async def _events(request: web.Request) -> web.StreamResponse:
             await ws.close(code=4401, message=b"not signed in to Motwi")
             return ws
         await pairing.attach(client_id, ws)
+    log.info("event socket opened (%s)", "window" if client_id is None else "extension")
 
+    sockets = request.app[SOCKETS]
+    sockets.add(ws)
     q = motwi.bus.subscribe()
     await ws.send_str(_dumps({"type": "hello", "status": await motwi.status()}))
     dirty = asyncio.Event()
@@ -657,6 +661,7 @@ async def _events(request: web.Request) -> web.StreamResponse:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         motwi.bus.unsubscribe(q)
+        sockets.discard(ws)
         if client_id is not None:
             pairing.detach(client_id, ws)
         await ws.close()
@@ -685,11 +690,18 @@ def create_app(
     app[AUTH] = auth
     app[PAIRING] = pairing
     app[ORIGINS] = _allowed_origins(port)
+    app[SOCKETS] = set()
 
     async def load_pairing(_: web.Application) -> None:
         await pairing.load()
 
+    async def close_sockets(a: web.Application) -> None:
+        # otherwise shutdown waits on them, and quitting looks like a hang
+        for ws in list(a[SOCKETS]):
+            await ws.close(code=1001, message=b"Motwi is shutting down")
+
     app.on_startup.append(load_pairing)
+    app.on_shutdown.append(close_sockets)
     app.add_routes(
         _routes(
             motwi,

@@ -4,8 +4,10 @@ import asyncio
 import json
 import socket
 import sys
+import time
 import uuid
 
+import aiohttp
 import httpx
 import pytest
 import respx
@@ -13,7 +15,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from conftest import make_new_action
 
 from motwi import __version__
-from motwi.api import ApiAuth, create_app
+from motwi.api import ApiAuth, create_app, serve
 from motwi.autostart import AutoStart, WindowsRunValue
 from motwi.events import RecapReady
 from motwi.maintenance import self_test, wipe
@@ -490,6 +492,23 @@ async def test_autostart_refusal_reaches_the_field(motwi):
         resp = await c.put("/api/app/autostart", json={"enabled": True}, headers=WINDOW)
         assert resp.status == 422
         assert "installed app" in (await resp.json())["error"]
+
+
+async def test_shutting_down_doesnt_wait_on_open_sockets(motwi):
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    app = create_app(motwi, auth=ApiAuth("w" * 43), port=port)
+    runner = await serve(app, port)
+    async with aiohttp.ClientSession() as session:
+        ws = await session.ws_connect(f"http://127.0.0.1:{port}/api/events")
+        await ws.send_json({"type": "hello", "token": "w" * 43})
+        assert (await ws.receive_json())["type"] == "hello"
+        started = time.monotonic()
+        await asyncio.wait_for(runner.cleanup(), timeout=5)
+        assert time.monotonic() - started < 3
+        msg = await ws.receive(timeout=2)
+        assert msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED)
 
 
 # installer jobs

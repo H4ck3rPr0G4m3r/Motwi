@@ -53,3 +53,14 @@ Options:
 - `--ai env` scores with a real model instead of the fake one. Set `MOTWI_AI_KEY`, and optionally `MOTWI_AI_PROVIDER` (`gemini`, `openrouter` or `custom`), `MOTWI_AI_MODEL` and `MOTWI_AI_BASE_URL`. Keys are only ever read from the environment.
 
 Each action prints one line, `[kind] login: text (source, score, reason)`, followed by the Twitch calls it made. A summary and the AI usage totals come last. Scripts are JSON Lines: `{"t": 1.5, "user": "name", "text": "hi", "badges": ["moderator"]}`, with an optional `emote_free_text`.
+
+## Build the installer
+
+```sh
+uv run --project core --group packaging python packaging/build.py
+uv run --project core python packaging/test_install.py
+```
+
+This needs Node and [Inno Setup 6](https://jrsoftware.org/isinfo.php). It writes `Motwi-Setup-<version>.exe` and the extension zip to `packaging/out`. The second command installs that build into a throwaway folder, launches it, quits it and uninstalls it. It uses its own port, data folder and Credential Manager namespace.
+
+The installer isn't signed yet, so Windows SmartScreen warns about it. Choose More info, then Run anyway.
