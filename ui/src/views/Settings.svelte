@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import DeviceLogin from "../components/DeviceLogin.svelte";
+  import ExtensionPanel from "../components/ExtensionPanel.svelte";
   import Icon from "../components/Icon.svelte";
   import LoadError from "../components/LoadError.svelte";
   import ProviderForm from "../components/ProviderForm.svelte";
@@ -188,6 +189,11 @@
         {:else}
           <button class="btn" onclick={() => (showBackup = true)}><Icon name="plus" size={14} />Add a backup</button>
         {/if}
+      </section>
+
+      <section class="sec" id="extension">
+        <h2>Browser extension <span>Motwi's decisions, undo and ban requests inside Twitch chat</span></h2>
+        <div class="card"><ExtensionPanel /></div>
       </section>
 
       <section class="sec" id="actions">

@@ -8,6 +8,7 @@ export type CoreMessage =
   | { type: "status"; status: Status }
   | { type: "action"; action: Action }
   | { type: "reminder"; action: Action }
+  | { type: "extension" }
   | { type: "login"; role: Role; ok: boolean; login: string | null; error: string | null };
 
 export const core = $state({
