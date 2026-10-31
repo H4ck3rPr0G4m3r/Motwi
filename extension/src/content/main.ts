@@ -13,8 +13,9 @@ const TICK_MS = 1_000;
 const RECONNECT_MS = 500;
 
 let lastChannel: string | null | undefined;
-let paired: string | null = null;
+let paired: string[] = [];
 let active = false;
+let activeChannel: string | null = null;
 let barHost: HTMLElement | null = null;
 let barComponent: object | null = null;
 let timer: ReturnType<typeof setInterval>;
@@ -25,7 +26,7 @@ function alive(): boolean {
 
 async function whoami(): Promise<void> {
   const reply = (await chrome.runtime.sendMessage({ type: "whoami" } satisfies Request)) as WhoAmI;
-  paired = reply?.channel ?? null;
+  paired = reply?.channels ?? [];
 }
 
 function mountBar(room: Element): void {
@@ -41,11 +42,12 @@ function mountBar(room: Element): void {
   if (barHost.parentElement !== room) room.prepend(barHost);
 }
 
-function activate(): void {
+function activate(channel: string): void {
   if (active) return;
   active = true;
+  activeChannel = channel;
   store.onChange = scheduleReconcile;
-  store.connect(() => {
+  store.connect(channel, () => {
     // the worker restarted, or the extension went away
     if (active && alive()) setTimeout(reconnect, RECONNECT_MS);
     else if (!alive()) shutdown();
@@ -53,14 +55,15 @@ function activate(): void {
 }
 
 function reconnect(): void {
-  if (!active || !alive()) return;
+  if (!active || !alive() || !activeChannel) return;
   active = false;
-  activate();
+  activate(activeChannel);
 }
 
 function deactivate(): void {
   if (!active) return;
   active = false;
+  activeChannel = null;
   store.disconnect();
   stopLines();
   if (barComponent) void unmount(barComponent);
@@ -92,14 +95,16 @@ async function tick(): Promise<void> {
     }
   }
   // a connected tab follows the core, in case the streamer signed in as another channel
-  const wanted = active ? (store.channel ?? paired) : paired;
-  if (!channel || channel !== wanted) {
+  const wanted = active
+    ? channel === activeChannel && (store.channel === null || store.channel === channel)
+    : !!channel && paired.includes(channel);
+  if (!channel || !wanted) {
     deactivate();
     return;
   }
   const room = document.querySelector(ROOM);
   if (!room) return; // chat is collapsed, or hasn't rendered yet
-  activate();
+  activate(channel);
   mountBar(room);
   watchLines();
 }

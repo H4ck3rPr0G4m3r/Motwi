@@ -5,6 +5,8 @@ import json
 import logging
 import shutil
 import ssl
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -13,7 +15,7 @@ from motwi.twitch.tokens import SecretStore, TokenStore, ai_key_name
 
 log = logging.getLogger(__name__)
 
-DATA_FILES = ("motwi.db", "motwi.db-wal", "motwi.db-shm", "motwi.ico")
+DATA_FILES = ("motwi.db", "motwi.db-wal", "motwi.db-shm", "motwi.ico", "cloudflared.yml")
 DATA_DIRS = ("logs", "webview")
 PROBE_SERVICE = "Motwi self-test"
 
@@ -40,7 +42,13 @@ def _check_files() -> str:
     from motwi.paths import extension_dir, ui_dir
 
     ui = ui_dir()
-    for needed in (ui / "index.html", ui / "pair.html", ui / "pair.js"):
+    for needed in (
+        ui / "index.html",
+        ui / "pair.html",
+        ui / "pair.js",
+        ui / "join.html",
+        ui / "join.js",
+    ):
         if not needed.is_file():
             raise FileNotFoundError(needed)
     manifest = json.loads((extension_dir() / "manifest.json").read_text(encoding="utf-8"))
@@ -116,6 +124,24 @@ def _check_web() -> str:
     return f"aiohttp {aiohttp.__version__}, websockets {websockets.__version__}"
 
 
+def _check_tunnel() -> str:
+    from motwi.paths import cloudflared_exe
+
+    exe = cloudflared_exe()
+    if exe is None or not exe.is_file():
+        raise FileNotFoundError("cloudflared")
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    done = subprocess.run(
+        [str(exe), "--version"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+        creationflags=flags,
+    )
+    return done.stdout.strip() or done.stderr.strip()
+
+
 CHECKS: dict[str, Callable[[], str]] = {
     "files": _check_files,
     "keyring": _check_keyring,
@@ -124,6 +150,7 @@ CHECKS: dict[str, Callable[[], str]] = {
     "tls": _check_tls,
     "store": _check_store,
     "web": _check_web,
+    "tunnel": _check_tunnel,
 }
 
 

@@ -120,6 +120,13 @@ class HelixClient:
     async def moderated_channels(self, user_id: str) -> list[dict]:
         return await self._paged("/moderation/channels", {"user_id": user_id})
 
+    async def is_moderator(self, broadcaster_id: str, user_id: str) -> bool:
+        """Whether this user mods the channel. Twitch requires the broadcaster's own token."""
+        data = await self._data(
+            "/moderation/moderators", {"broadcaster_id": broadcaster_id, "user_id": user_id}
+        )
+        return any(str(m.get("user_id")) == user_id for m in data)
+
     async def banned_users(self, broadcaster_id: str) -> list[dict]:
         """Banned and timed-out users. Twitch requires the broadcaster's own token."""
         return await self._paged("/moderation/banned", {"broadcaster_id": broadcaster_id})

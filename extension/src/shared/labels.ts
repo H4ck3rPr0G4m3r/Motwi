@@ -2,7 +2,7 @@
 // can pin the wording that promises honesty: nothing reads as done before the core says so.
 
 import { duration, modelLabel } from "../../../ui/src/lib/format";
-import type { Action, Counts, Link, Status, Verb } from "./protocol";
+import type { Action, Counts, Link, Role, Status, Verb } from "./protocol";
 
 export interface BarView {
   label: string;
@@ -18,7 +18,15 @@ export function modelName(s: Status): string {
   return ai ? modelLabel(ai.model) : "No AI set up";
 }
 
-export function barView(link: Link, status: Status | null): BarView {
+export function barView(link: Link, status: Status | null, role: Role = "own"): BarView {
+  if (role === "mod") {
+    const view = streamerView(link, status, true);
+    return { ...view, canSwitch: false };
+  }
+  return streamerView(link, status, false);
+}
+
+function streamerView(link: Link, status: Status | null, mod: boolean): BarView {
   const off = (label: string, sub: string, tone: BarView["tone"] = "off"): BarView => ({
     label,
     sub,
@@ -26,19 +34,32 @@ export function barView(link: Link, status: Status | null): BarView {
     canSwitch: false,
     suggesting: false,
   });
-  if (link === "offline") return off("Motwi isn't running", "Start Motwi to moderate", "bad");
-  if (link === "revoked") return off("Disconnected", "Connect again in Motwi's Settings", "bad");
+  if (link === "moved") return off("Motwi moved", "Ask the streamer for the new link", "bad");
+  if (link === "offline") {
+    return mod
+      ? off("Can't reach Motwi", "Trying again", "bad")
+      : off("Motwi isn't running", "Start Motwi to moderate", "bad");
+  }
+  if (link === "revoked") {
+    return mod
+      ? off("Disconnected", "Ask the streamer for a new invite", "bad")
+      : off("Disconnected", "Connect again in Motwi's Settings", "bad");
+  }
   if (link === "unpaired") return off("Not connected", "Connect from Motwi's Settings", "bad");
   if (link === "connecting" || !status) return off("Connecting", "Reaching Motwi");
 
   const model = modelName(status);
   switch (status.engine) {
     case "reconnect":
-      return off("Reconnect Twitch", status.twitch.detail || "Open Motwi to sign in again", "bad");
+      return mod
+        ? off("Twitch disconnected", "The streamer needs to reconnect it", "bad")
+        : off("Reconnect Twitch", status.twitch.detail || "Open Motwi to sign in again", "bad");
     case "connecting":
       return off("Connecting to Twitch", status.twitch.detail || model);
     case "stopped":
-      return off("Not watching", status.twitch.detail || "Open Motwi to start", "bad");
+      return mod
+        ? off("Not watching", "The streamer hasn't started Motwi", "bad")
+        : off("Not watching", status.twitch.detail || "Open Motwi to start", "bad");
     case "paused":
       return { label: "Paused", sub: model, tone: "off", canSwitch: true, suggesting: false };
     case "suggesting":
@@ -239,6 +260,14 @@ export function receiptText(a: Action): string {
   if (a.status === "done") return `${a.user_login} banned${by}`;
   if (a.status === "denied") return `${a.user_login}'s ban denied${by}`;
   return `${a.user_login}: ${tagLabel(a)}`;
+}
+
+/** Who else is looking at a request, for the pop-up. */
+export function alsoHere(names: string[] | undefined): string {
+  if (!names?.length) return "";
+  if (names.length === 1) return `${names[0]} is here too`;
+  if (names.length === 2) return `${names[0]} and ${names[1]} are here too`;
+  return `${names[0]} and ${names.length - 1} others are here too`;
 }
 
 export function requestFoot(a: Action): string {

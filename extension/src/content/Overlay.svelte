@@ -12,7 +12,7 @@
   let logEl = $state<HTMLElement>();
   let countsEl = $state<HTMLElement>();
 
-  const view = $derived(barView(store.link, store.status));
+  const view = $derived(barView(store.link, store.status, store.role));
   const parts = $derived(countParts(store.chat?.counts ?? null));
   const paused = $derived(store.status?.paused ?? false);
   const warnings = $derived(store.online ? (store.chat?.warnings ?? []) : []);
@@ -54,16 +54,18 @@
       {#each parts as p (p.key)}<span data-count={p.kind}>{p.text}</span>{:else}<span>0</span>{/each}
       <Icon name="caret-down" size={10} />
     </button>
-    <button
-      class="sw"
-      role="switch"
-      aria-checked={!paused && view.canSwitch}
-      aria-label="Motwi moderation"
-      aria-busy={store.switching}
-      title={view.canSwitch ? (paused ? "Resume moderation" : "Pause moderation") : view.label}
-      disabled={!view.canSwitch || store.switching}
-      onclick={() => store.setPaused(!paused)}
-    ></button>
+    {#if store.role === "own"}
+      <button
+        class="sw"
+        role="switch"
+        aria-checked={!paused && view.canSwitch}
+        aria-label="Motwi moderation"
+        aria-busy={store.switching}
+        title={view.canSwitch ? (paused ? "Resume moderation" : "Pause moderation") : view.label}
+        disabled={!view.canSwitch || store.switching}
+        onclick={() => store.setPaused(!paused)}
+      ></button>
+    {/if}
   </div>
 
   {#if store.switchError}

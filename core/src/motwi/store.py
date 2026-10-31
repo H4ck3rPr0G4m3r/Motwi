@@ -135,6 +135,11 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_outages_started ON ai_outages(started_at);
     """,
+    # a mod's Twitch account; browsers of the streamer's own leave these empty
+    """
+    ALTER TABLE clients ADD COLUMN user_id TEXT;
+    ALTER TABLE clients ADD COLUMN login TEXT;
+    """,
 ]
 
 # what a stats total counts: everything except suggestions nobody took
@@ -243,6 +248,8 @@ class ClientRecord:
     token_hash: str
     created_at: float
     last_seen: float | None
+    user_id: str | None = None  # a mod's Twitch account
+    login: str | None = None
 
 
 @dataclass(frozen=True)
@@ -364,12 +371,21 @@ class Store:
 
     # paired clients
 
-    async def add_client(self, kind: str, label: str, token_hash: str) -> ClientRecord:
-        record = ClientRecord(uuid4().hex, kind, label, token_hash, time.time(), None)
+    async def add_client(
+        self,
+        kind: str,
+        label: str,
+        token_hash: str,
+        user_id: str | None = None,
+        login: str | None = None,
+    ) -> ClientRecord:
+        record = ClientRecord(
+            uuid4().hex, kind, label, token_hash, time.time(), None, user_id, login
+        )
         await self._write(
             lambda c: c.execute(
-                "INSERT INTO clients(id, kind, label, token_hash, created_at, last_seen) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO clients(id, kind, label, token_hash, created_at, last_seen, "
+                "user_id, login) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.id,
                     record.kind,
@@ -377,6 +393,8 @@ class Store:
                     record.token_hash,
                     record.created_at,
                     record.last_seen,
+                    record.user_id,
+                    record.login,
                 ),
             )
         )
@@ -385,8 +403,8 @@ class Store:
     async def list_clients(self) -> list[ClientRecord]:
         rows = await self._run(
             lambda c: c.execute(
-                "SELECT id, kind, label, token_hash, created_at, last_seen FROM clients "
-                "ORDER BY created_at"
+                "SELECT id, kind, label, token_hash, created_at, last_seen, user_id, login "
+                "FROM clients ORDER BY created_at"
             ).fetchall()
         )
         return [ClientRecord(*row) for row in rows]

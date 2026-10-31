@@ -6,9 +6,12 @@ It uses a throwaway data folder and an in-memory credential store, never your re
 Motwi data or Twitch account. Twitch is faked as connected, and buttons act on a fake
 that only logs. `--channel` sets which channel the extension activates on.
 
-For extension work, two extra routes take the demo token: `POST /api/demo/action` adds an
-action as if Motwi had just decided it, and `POST /api/demo/fail` makes the fake Twitch
-refuse calls.
+For extension work, three extra routes take the demo token: `POST /api/demo/action` adds an
+action as if Motwi had just decided it, `POST /api/demo/fail` makes the fake Twitch refuse
+calls, and `POST /api/demo/mods` sets who the fake Twitch says is a mod.
+
+Mods join through a fake tunnel on localhost, and a Twitch token of `demo-<login>` signs them
+in as that login. `--real-tunnel` opens a real cloudflared quick tunnel instead.
 """
 
 import argparse
@@ -24,16 +27,19 @@ from typing import Any
 from aiohttp import web
 
 from motwi.api import ApiAuth, create_app, serve
+from motwi.api.server import MODS
 from motwi.app import seed_if_empty
 from motwi.engine.offenses import OffenseTracker
 from motwi.events import ActionChanged
 from motwi.models import Ceiling, Kind, Source, Status, StreamContext
 from motwi.moderation import ExecutorError, ModerationService
-from motwi.paths import ui_dir
+from motwi.paths import cloudflared_exe, ui_dir
 from motwi.recap import build_recap
 from motwi.service import Motwi, _Session
 from motwi.settings import ProviderConfig
 from motwi.store import NewAction, Store, Usage
+from motwi.tunnel import Tunnel
+from motwi.twitch import SCOPES
 from motwi.twitch.tokens import MemorySecrets, Token, TokenStore
 
 TOKEN = "demo"
@@ -196,6 +202,10 @@ class FakeTwitch:
 
     def __init__(self) -> None:
         self.failing = False
+        self.mods = {"brakkenhoff", "lumenfox"}
+
+    async def is_moderator(self, _broadcaster_id: str, user_id: str) -> bool:
+        return user_id.removeprefix("id-") in self.mods
 
     async def _call(self, what: str) -> None:
         print(f"fake Twitch: {what}", flush=True)
@@ -277,16 +287,60 @@ def demo_routes(motwi: Motwi, twitch: FakeTwitch) -> list[web.RouteDef]:
         twitch.failing = bool((await request.json()).get("on"))
         return web.json_response({"ok": True})
 
-    return [web.post("/api/demo/action", add_action), web.post("/api/demo/fail", set_failing)]
+    async def set_mods(request: web.Request) -> web.Response:
+        twitch.mods = set((await request.json())["logins"])
+        return web.json_response({"ok": True})
+
+    async def move(request: web.Request) -> web.Response:
+        # what a Motwi restart does to mods: the address they knew stops answering
+        mods = request.app[MODS]
+        await mods._stop_serving()
+        await mods._start_serving()
+        return web.json_response({"link": mods.link})
+
+    return [
+        web.post("/api/demo/action", add_action),
+        web.post("/api/demo/fail", set_failing),
+        web.post("/api/demo/mods", set_mods),
+        web.post("/api/demo/move", move),
+    ]
 
 
-async def main(port: int, setup: bool, channel: str, empty: bool = False) -> None:
+class LocalTunnel:
+    """Stands in for cloudflared: the gateway's own localhost address, with a new port each
+    run, so the extension's tests can drive the real join flow without the internet."""
+
+    def __init__(self) -> None:
+        self.state = "off"
+        self.url: str | None = None
+        self.detail = ""
+        self.on_change = lambda: None
+
+    async def start(self, port: int) -> None:
+        self.state, self.url = "up", f"http://127.0.0.1:{port}"
+        self.on_change()
+
+    async def stop(self) -> None:
+        self.state, self.url = "off", None
+        self.on_change()
+
+
+async def fake_identify(twitch_token: str) -> tuple[str, str]:
+    login = twitch_token.removeprefix("demo-")
+    return f"id-{login}", login
+
+
+async def main(
+    port: int, setup: bool, channel: str, empty: bool = False, real_tunnel: bool = False
+) -> None:
     home = Path(tempfile.mkdtemp(prefix="motwi-demo-"))
     store = await Store.open(home / "motwi.db")
     secrets = MemorySecrets()
     if not setup:
         secrets.set("ai:primary", "demo-key")
-        TokenStore(secrets).save("streamer", Token("x", "y", time.time() + 3600, (), "42", channel))
+        TokenStore(secrets).save(
+            "streamer", Token("x", "y", time.time() + 3600, SCOPES, "42", channel)
+        )
     if not setup:
         await seed_if_empty(store)
         if not empty:
@@ -313,6 +367,10 @@ async def main(port: int, setup: bool, channel: str, empty: bool = False) -> Non
         port=port,
         ui_dir=ui_dir(),
         open_url=lambda url: print(f"pair at {url}", flush=True),
+        tunnel=Tunnel(cloudflared_exe(), home / "cloudflared.yml")
+        if real_tunnel
+        else LocalTunnel(),
+        identify=fake_identify,
     )
     app.add_routes(demo_routes(motwi, twitch))
     runner = await serve(app, port)
@@ -331,5 +389,8 @@ if __name__ == "__main__":
     parser.add_argument("--setup", action="store_true", help="start at first-run setup")
     parser.add_argument("--channel", default="official_h4ck3r", help="the fake streamer's login")
     parser.add_argument("--empty", action="store_true", help="no sample actions")
+    parser.add_argument(
+        "--real-tunnel", action="store_true", help="open a real cloudflared quick tunnel for mods"
+    )
     args = parser.parse_args()
-    asyncio.run(main(args.port, args.setup, args.channel.lower(), args.empty))
+    asyncio.run(main(args.port, args.setup, args.channel.lower(), args.empty, args.real_tunnel))

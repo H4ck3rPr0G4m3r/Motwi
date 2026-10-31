@@ -241,6 +241,28 @@ export interface ExtensionClient {
   connected: boolean;
 }
 
+export interface ModClient extends ExtensionClient {
+  user_id: string;
+  login: string;
+}
+
+export interface ModInvite {
+  id: string;
+  /** Null until the tunnel has an address. */
+  url: string | null;
+  expires_at: number;
+}
+
+export interface ModsView {
+  can_invite: boolean;
+  tunnel: { state: "off" | "starting" | "up" | "failed"; detail: string };
+  link: string | null;
+  needs_sharing: boolean;
+  invites: ModInvite[];
+  mods: ModClient[];
+  check_problem: string;
+}
+
 export interface ExtensionInfo {
   clients: ExtensionClient[];
   folder: string | null;

@@ -36,7 +36,7 @@ from motwi.moderation import AlreadyResolved, ExecutorError
 from motwi.recap import build_recap, kind_totals, trigger_label
 from motwi.settings import ProviderConfig, Settings
 from motwi.store import ActionFilter, ActionRecord, Store
-from motwi.twitch import BOT_SCOPES, SCOPES, client_id
+from motwi.twitch import BOT_SCOPES, CHECK_MODS_SCOPE, SCOPES, client_id
 from motwi.twitch.accounts import ensure_moderator, save_sign_in
 from motwi.twitch.auth import (
     AuthError,
@@ -681,6 +681,48 @@ class Motwi:
     async def unban(self, user_id: str) -> None:
         s = self._require_session()
         await s.executor.unban(user_id)
+
+    # mods
+
+    def can_check_mods(self) -> bool:
+        token = self._tokens.load("streamer")
+        return token is not None and CHECK_MODS_SCOPE in token.scopes
+
+    async def is_channel_mod(self, user_id: str) -> bool:
+        """Whether this Twitch user mods the streamer's channel. The streamer counts."""
+        token = self._tokens.load("streamer")
+        if token is None:
+            raise NotConnected("Motwi isn't signed in to Twitch")
+        if user_id == token.user_id:
+            return True
+        if self._session is not None:
+            return await self._session.channel_helix.is_moderator(token.user_id, user_id)
+        # no session to share: the session's auth would otherwise race this one on a refresh
+        auth = TwitchAuth(
+            http=self._http, client_id=client_id(), store=self._tokens, role="streamer"
+        )
+        return await HelixClient(auth, self._http).is_moderator(token.user_id, user_id)
+
+    def status_for_mods(self, status: dict) -> dict:
+        """The status without what's only the streamer's business: costs, keys, private URLs,
+        the bot's account and app updates."""
+
+        def model_only(view: dict | None) -> dict | None:
+            return None if view is None else {"provider": view["provider"], "model": view["model"]}
+
+        return {
+            **status,
+            "accounts": {"streamer": status["accounts"]["streamer"], "bot": None},
+            "moderator": None,
+            "month_cost": 0,
+            "update": {"available": False, "version": None, "url": None},
+            "ai": {
+                "state": status["ai"]["state"],
+                "detail": "",
+                "primary": model_only(status["ai"]["primary"]),
+                "backup": model_only(status["ai"]["backup"]),
+            },
+        }
 
     # actions
 

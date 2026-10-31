@@ -8,6 +8,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
     "test": "vitest run",
     "e2e": "playwright test",
+    "live:tunnel": "node e2e/tunnel.ts",
     "live": "node e2e/live.ts"
   },
   "devDependencies": {

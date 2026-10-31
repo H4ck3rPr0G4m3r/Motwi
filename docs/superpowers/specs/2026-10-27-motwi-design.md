@@ -251,6 +251,7 @@ Every message that reaches the AI stage and cannot be scored is recorded as "unc
   - deleting chat messages
   - warnings
   - reading channel info
+  - reading the channel's moderators (streamer's account only, for mod access)
 - **Tokens** refresh automatically. Twitch rotates refresh tokens for public clients, so each new one must be persisted. If a refresh fails, the UI shows "Reconnect Twitch" and does not loop on errors.
 - **EventSub WebSocket** subscriptions: chat messages, `channel.update` for title and game, and `stream.online` / `stream.offline` for stream boundaries and recaps.
   - Add moderation events if useful, for example to notice that a human mod already banned someone.
@@ -266,11 +267,14 @@ Mod access is the **last part of v1 to build**. Mods can always moderate through
   - The mod installs the extension, opens the link, and signs in with Twitch in the extension.
   - Motwi checks that this Twitch user really is a moderator of the channel, and re-checks periodically. A leaked link alone is useless.
   - The paired extension gets its own revocable token. (builder's call, settled after review)
+  - The Twitch sign-in asks for no scopes, runs in the extension's own page, and is revoked as soon as Motwi has read who it belongs to. Nothing keeps it. Mod status is checked with the streamer's token.
 - **What mods can do:** approve or deny ban requests, undo actions, and act on suggestions. Mods cannot change rules or settings in v1. (builder's call)
 - **Attribution.** Every action records which mod took it, and the reason sent to Twitch names them.
 - **Transport (owner's decision: option A now, B possible later).**
   - Motwi bundles `cloudflared` and runs a "quick tunnel". It needs no account, needs no open ports, and runs only while at least one mod is paired and Motwi is running.
   - All traffic through it is authenticated with per-mod tokens.
+  - The tunnel reaches a separate local server with only the mods' routes, never the local API.
+  - Anyone can get a `trycloudflare.com` address, so before sending a token to an address, the extension asks it to prove it holds that token's hash, bound to the address.
   - **The tunnel address changes every time Motwi restarts.** In v1:
     - Mods' extensions detect that the old address is gone and show "Motwi moved, ask the streamer for the new link".
     - Motwi shows the streamer a fresh link, one click to copy, to send to mods.

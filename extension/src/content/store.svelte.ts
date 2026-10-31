@@ -8,6 +8,7 @@ import {
   type Link,
   type PortEvent,
   type PortRequest,
+  type Role,
   type Verb,
 } from "../shared/protocol";
 
@@ -24,6 +25,7 @@ export interface Receipt {
 class ChatStore {
   link = $state<Link>("connecting");
   channel = $state<string | null>(null);
+  role = $state<Role>("own");
   chat = $state<Omit<Chat, "recent" | "open_requests"> | null>(null);
   actions = $state<Record<number, Action>>({});
   /** Requests whose ban failed: the pop-up stays until retried or closed. */
@@ -62,8 +64,8 @@ class ChatStore {
     return Object.values(this.actions).sort((x, y) => y.id - x.id);
   }
 
-  connect(onLost: () => void): void {
-    const port = chrome.runtime.connect({ name: PORT_NAME });
+  connect(channel: string, onLost: () => void): void {
+    const port = chrome.runtime.connect({ name: `${PORT_NAME}:${channel}` });
     this.#port = port;
     port.onMessage.addListener((m: PortEvent) => this.#receive(m));
     port.onDisconnect.addListener(() => {
@@ -91,19 +93,20 @@ class ChatStore {
     if (m.type === "snapshot") {
       this.link = m.snapshot.link;
       this.channel = m.snapshot.channel;
+      this.role = m.snapshot.role;
       if (m.snapshot.chat) {
         const { recent, open_requests, ...rest } = m.snapshot.chat;
         this.chat = rest;
         for (const a of [...recent, ...open_requests]) this.#upsert(a);
         this.#dropAnsweredElsewhere(open_requests);
-      } else if (m.snapshot.link !== "offline") {
+      } else if (m.snapshot.link !== "offline" && m.snapshot.link !== "moved") {
         this.chat = null;
       }
       this.onChange();
     } else if (m.type === "action") {
       this.#upsert(m.action);
       this.onChange();
-    } else {
+    } else if (m.type === "result") {
       const resolve = this.#pending.get(m.req);
       this.#pending.delete(m.req);
       resolve?.(m.ok, m.error);
