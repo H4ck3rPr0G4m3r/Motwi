@@ -7,7 +7,7 @@
   import Strictness from "../components/Strictness.svelte";
   import { del, get, message, post } from "../lib/api";
   import { core } from "../lib/events.svelte";
-  import { CEILING_LABEL, KIND_COLOR, score, wouldDo } from "../lib/format";
+  import { CEILING_GROUPS, CEILING_LABEL, KIND_COLOR, score, wouldDo } from "../lib/format";
   import type { BlockedWord, Ceiling, Rule, Settings, TryResult } from "../lib/types";
 
   let rules = $state<Rule[] | null>(null);
@@ -157,9 +157,13 @@
             <form class="add" onsubmit={addWord}>
               <label class="sr-only" for="word">Word or phrase to block</label>
               <input id="word" class="input" bind:value={phrase} placeholder="Word or phrase" maxlength="100" />
-              <label class="sr-only" for="word-ceiling">Strongest action</label>
+              <label class="sr-only" for="word-ceiling">Action</label>
               <select id="word-ceiling" class="input" bind:value={wordCeiling}>
-                {#each ["delete", "warn", "timeout", "ban"] as c (c)}<option value={c}>{CEILING_LABEL[c as Ceiling]}</option>{/each}
+                {#each CEILING_GROUPS as group (group.label)}
+                  <optgroup label={group.label}>
+                    {#each group.options as c (c)}<option value={c}>{CEILING_LABEL[c]}</option>{/each}
+                  </optgroup>
+                {/each}
               </select>
               <label class="check">
                 <input type="checkbox" bind:checked={hidden} />Hide it

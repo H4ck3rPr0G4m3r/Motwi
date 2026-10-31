@@ -145,7 +145,14 @@ def test_presets_and_client_for_defaults():
     assert c._url == "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
 
+def test_groq_preset():
+    assert PROVIDERS["groq"].default_model == "openai/gpt-oss-20b"
+    c = client_for(ProviderConfig("groq", "openai/gpt-oss-20b"), "k")
+    assert c._url == "https://api.groq.com/openai/v1/chat/completions"
+
+
 def test_cost_for():
     assert cost_for("gemini-2.5-flash", 1_000_000, 0) == pytest.approx(0.30)
     assert cost_for("google/gemini-2.5-flash-lite", 0, 1_000_000) == pytest.approx(0.40)
+    assert cost_for("openai/gpt-oss-20b", 1_000_000, 1_000_000) == pytest.approx(0.375)
     assert cost_for("nope", 1, 1) is None

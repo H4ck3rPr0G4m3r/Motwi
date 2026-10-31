@@ -284,8 +284,8 @@ async def main(port: int, setup: bool, channel: str, empty: bool = False) -> Non
     home = Path(tempfile.mkdtemp(prefix="motwi-demo-"))
     store = await Store.open(home / "motwi.db")
     secrets = MemorySecrets()
-    secrets.set("ai:primary", "demo-key")
     if not setup:
+        secrets.set("ai:primary", "demo-key")
         TokenStore(secrets).save("streamer", Token("x", "y", time.time() + 3600, (), "42", channel))
     if not setup:
         await seed_if_empty(store)

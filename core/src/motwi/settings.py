@@ -9,7 +9,7 @@ from motwi.models import DEFAULT_LADDER, PRESETS, Kind, LadderStep, Thresholds
 
 @dataclass(frozen=True)
 class ProviderConfig:
-    provider: Literal["gemini", "openrouter", "custom"]
+    provider: Literal["groq", "gemini", "openrouter", "custom"]
     model: str
     base_url: str | None = None
     api_key_env: str = "MOTWI_AI_KEY"

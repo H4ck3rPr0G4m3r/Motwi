@@ -109,8 +109,9 @@ Motwi should feel like a professional app that a streamer's friends can install 
 
 - **Core:** Python 3.12, a single asyncio process. Nothing blocks the event loop: AI calls are async HTTP, and DB access goes through an async wrapper or a worker thread. (The old version blocked the whole bot during every AI call.)
 - **Twitch:** talk to EventSub WebSocket and Helix directly with an async HTTP and WebSocket client, not TwitchIO. The surface is small, and the old project suffered from TwitchIO version churn.
-- **AI:** one OpenAI-compatible async client covers all three providers.
-  - Gemini through its OpenAI-compatible endpoint.
+- **AI:** one OpenAI-compatible async client covers all providers.
+  - Groq, the recommended one. The window offers Groq, OpenRouter and Custom.
+  - Gemini through its OpenAI-compatible endpoint. Its card only shows for a slot already using it.
   - OpenRouter.
   - Any custom OpenAI-compatible base URL.
   - This drops LiteLLM, which is huge in a frozen installer. Use JSON/structured output where the provider supports it.
@@ -184,9 +185,9 @@ Every message that reaches the AI stage and cannot be scored is recorded as "unc
 - **Strictness presets** set three thresholds: Relaxed 7 / 8.5 / 9.5, Standard 6 / 7.5 / 9, Strict 5 / 6.5 / 8. Each is the warn / timeout / ban-request threshold.
   - An "advanced" disclosure exposes the raw numbers.
   - Thresholds are always kept in order. The UI explains this instead of silently reordering them.
-- **Rule ceilings.** Each rule carries the strongest action it allows: `delete`, `warn`, `up to timeout`, or `up to ban`. This matches the chips in the Rules mockup.
-  - The score picks the base action.
-  - The rule ceiling caps it.
+- **Rule actions.** Each rule carries what it does: `delete`, `warn`, `timeout`, `ban`, `up to timeout`, or `up to ban`.
+  - `delete`, `warn`, `timeout` and `ban` are fixed. Any score at or above the warn threshold does that action, on the first offense. `timeout` uses the ladder's lengths and never bans. `ban` is still a ban request for a human to approve.
+  - For `up to timeout` and `up to ban`, the score picks the base action and the rule caps it.
   - With no rule matched, the cap is "up to timeout". Bans only ever come from rules that allow them.
   - Any score at or above the warn threshold also deletes the message. (builder's call)
 - **Escalation ladder.** The default ladder is warn → timeout 1 min → timeout 10 min → ban request. It is configurable.

@@ -21,7 +21,7 @@ from motwi.ai.prompt import BatchItem, build_request
 from motwi.ai.providers import PROVIDERS, client_for
 from motwi.ai.scorer import Scorer
 from motwi.app import MotwiApp, ai_key, effective_ai, seed_if_empty, stream_context
-from motwi.engine.decide import decide_ai
+from motwi.engine.decide import decide_ai, decide_filter
 from motwi.events import (
     AIStateChanged,
     EventBus,
@@ -842,12 +842,18 @@ class Motwi:
             raise FieldError("text", "Type a message to try.")
         word = self.live.blocked.match(text)
         if word is not None:
+            plan = decide_filter(
+                base_index=word.base_index,
+                ceiling=word.ceiling,
+                ladder=self.live.settings.ladder,
+                last_index=None,
+            )
             return {
                 "source": Source.BLOCKED_WORD.value,
                 "score": None,
                 "rule": None,
                 "reason": f"Blocked word: {'(hidden)' if word.hidden else word.phrase}",
-                "action": {"kind": Kind.DELETE.value, "duration_s": None},
+                "action": {"kind": plan.kind.value, "duration_s": plan.duration_s},
             }
         if self.live.settings.primary is None and self.live.settings.backup is None:
             raise FieldError("text", "Set up an AI provider in Settings first.")

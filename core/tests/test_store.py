@@ -188,3 +188,11 @@ async def test_hidden_blocked_word_round_trips(store):
     await store.add_blocked("slur", hidden=True)
     [w] = await store.list_blocked()
     assert w.hidden is True
+
+
+@pytest.mark.parametrize("ceiling", [Ceiling.ALWAYS_TIMEOUT, Ceiling.ALWAYS_BAN])
+async def test_fixed_actions_are_saved(store, ceiling):
+    await store.add_rule("No slurs", ceiling, "community")
+    await store.add_blocked("badword", ceiling=ceiling)
+    assert (await store.list_rules())[-1].ceiling is ceiling
+    assert (await store.list_blocked())[-1].ceiling is ceiling

@@ -18,10 +18,14 @@ class Kind(StrEnum):
 
 
 class Ceiling(StrEnum):
+    """What a rule does. TIMEOUT and BAN let the score decide, up to that action."""
+
     DELETE = "delete"
     WARN = "warn"
     TIMEOUT = "timeout"
     BAN = "ban"
+    ALWAYS_TIMEOUT = "always_timeout"
+    ALWAYS_BAN = "always_ban"
 
 
 class Source(StrEnum):

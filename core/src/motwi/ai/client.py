@@ -1,4 +1,4 @@
-"""OpenAI-compatible chat-completions client (Gemini, OpenRouter, custom)."""
+"""OpenAI-compatible chat-completions client (Groq, Gemini, OpenRouter, custom)."""
 
 from dataclasses import dataclass
 from typing import Any, Protocol

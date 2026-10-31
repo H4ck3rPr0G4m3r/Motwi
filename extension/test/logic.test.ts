@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { modelLabel } from "../../ui/src/lib/format";
 import { matchLines, normalize, type LineInfo } from "../src/content/match";
 import { channelFromUrl } from "../src/shared/channel";
 import {
@@ -294,5 +295,12 @@ describe("labels", () => {
     expect(requestFoot(action({ status: "pending", hold_applied: true }))).toContain("Held");
     expect(requestFoot(action({ status: "pending", hold_applied: false }))).toContain("Not held");
     expect(requestFoot(action({ status: "expired", hold_applied: true }))).toContain("Hold ended");
+  });
+});
+
+describe("model names", () => {
+  it("reads well for the recommended Groq model", () => {
+    expect(modelLabel("openai/gpt-oss-20b")).toBe("GPT OSS 20b");
+    expect(modelLabel("google/gemini-2.5-flash-lite")).toBe("Gemini 2.5 Flash Lite");
   });
 });

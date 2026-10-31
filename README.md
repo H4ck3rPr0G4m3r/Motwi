@@ -13,7 +13,7 @@ cd ui && npm ci && npm run build
 cd ../core && uv sync && uv run motwi
 ```
 
-A window opens with the first-run setup: connect Twitch, pick an AI provider and paste its key, then review the starter rules. Closing the window keeps Motwi running in the tray. Windows 11 puts new tray icons under the `^` arrow; drag it out to keep it visible. Quit Motwi from that icon. Data lives in `%APPDATA%\Motwi`, and keys and Twitch tokens are kept in Windows Credential Manager.
+A window opens with the first-run setup: connect Twitch, pick an AI provider (Groq is the recommended one) and paste its key, then review the starter rules. Closing the window keeps Motwi running in the tray. Windows 11 puts new tray icons under the `^` arrow; drag it out to keep it visible. Quit Motwi from that icon. Data lives in `%APPDATA%\Motwi`, and keys and Twitch tokens are kept in Windows Credential Manager.
 
 To see Motwi inside Twitch chat, build the extension (`cd extension && npm ci && npm run build`), then follow the Browser extension steps in Settings: load `extension/dist` as an unpacked extension in Chrome, Edge, Brave or Opera, and press Connect this browser. It activates only on your own channel's chat.
 
@@ -50,7 +50,7 @@ Options:
 
 - `--speed N` plays the script at N times real time. `0` replays instantly (the default is `1`).
 - `--suggest-only` records suggestions instead of acting, so nothing is executed.
-- `--ai env` scores with a real model instead of the fake one. Set `MOTWI_AI_KEY`, and optionally `MOTWI_AI_PROVIDER` (`gemini`, `openrouter` or `custom`), `MOTWI_AI_MODEL` and `MOTWI_AI_BASE_URL`. Keys are only ever read from the environment.
+- `--ai env` scores with a real model instead of the fake one. Set `MOTWI_AI_KEY`, and optionally `MOTWI_AI_PROVIDER` (`groq`, `gemini`, `openrouter` or `custom`), `MOTWI_AI_MODEL` and `MOTWI_AI_BASE_URL`. Keys are only ever read from the environment.
 
 Each action prints one line, `[kind] login: text (source, score, reason)`, followed by the Twitch calls it made. A summary and the AI usage totals come last. Scripts are JSON Lines: `{"t": 1.5, "user": "name", "text": "hi", "badges": ["moderator"]}`, with an optional `emote_free_text`.
 

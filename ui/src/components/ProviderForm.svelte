@@ -15,8 +15,10 @@
 
   // the form starts from what is saved, then belongs to the user until saved again
   const initial = untrack(() => config[slot]);
-  let provider = $state<Name>(initial?.provider ?? "gemini");
-  let model = $state(initial?.model ?? untrack(() => config.providers.gemini?.default_model) ?? "");
+  // a backup on the same service as the main AI goes down with it
+  const start: Name = untrack(() => (slot === "backup" && config.primary?.provider === "groq" ? "openrouter" : "groq"));
+  let provider = $state<Name>(initial?.provider ?? start);
+  let model = $state(initial?.model ?? untrack(() => config.providers[start]?.default_model) ?? "");
   let baseUrl = $state(initial?.base_url ?? "");
   let key = $state("");
   let showKey = $state(false);
@@ -24,7 +26,17 @@
   let result = $state<{ ok: boolean; text: string } | null>(null);
   let fieldError = $state<Record<string, string>>({});
 
+  const CARDS: [Name, string, string][] = [
+    ["groq", "Groq", "Very fast and cheap."],
+    ["openrouter", "OpenRouter", "Many models, one key."],
+    ["custom", "Custom", "Any OpenAI-compatible URL."],
+  ];
+  // Gemini isn't offered any more, but a slot already using it keeps its card
+  const cards: [Name, string, string][] =
+    initial?.provider === "gemini" ? [["gemini", "Gemini", "Google. Cheap and fast."], ...CARDS] : CARDS;
+
   const KEY_LINKS: Record<string, { href: string; text: string }> = {
+    groq: { href: "https://console.groq.com/keys", text: "Get a Groq key" },
     gemini: { href: "https://aistudio.google.com/apikey", text: "Get a Gemini key" },
     openrouter: { href: "https://openrouter.ai/keys", text: "Get an OpenRouter key" },
   };
@@ -77,16 +89,16 @@
 </script>
 
 <div class="form">
-  <div role="radiogroup" aria-label="AI provider" class="providers">
-    {#each [["gemini", "Gemini", "Google. Cheap and fast."], ["openrouter", "OpenRouter", "Many models, one key."], ["custom", "Custom", "Any OpenAI-compatible URL."]] as [value, label, help] (value)}
+  <div role="radiogroup" aria-label="AI provider" class="providers" style:--cards={cards.length}>
+    {#each cards as [value, label, help] (value)}
       <button
         type="button"
         role="radio"
         aria-checked={provider === value}
         class="prov"
-        onclick={() => choose(value as Name)}
+        onclick={() => choose(value)}
       >
-        <b>{label}</b><span>{help}</span>
+        <b>{label}{#if value === "groq" && slot === "primary"}<em>Recommended</em>{/if}</b><span>{help}</span>
       </button>
     {/each}
   </div>
@@ -172,7 +184,7 @@
   }
   .providers {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(var(--cards), 1fr);
     gap: 8px;
   }
   .prov {
@@ -186,7 +198,17 @@
     cursor: pointer;
   }
   .prov b {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 6px;
     font-size: 13px;
+  }
+  .prov em {
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--motwi);
   }
   .prov span {
     font-size: 12px;

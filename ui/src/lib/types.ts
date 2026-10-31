@@ -1,7 +1,7 @@
 // Shapes returned by the core's local API (core/src/motwi/api/server.py).
 
 export type Kind = "none" | "delete" | "warn" | "timeout" | "ban_request";
-export type Ceiling = "delete" | "warn" | "timeout" | "ban";
+export type Ceiling = "delete" | "warn" | "timeout" | "ban" | "always_timeout" | "always_ban";
 export type ActionStatus =
   | "suggested"
   | "pending"
@@ -30,7 +30,7 @@ export interface Account {
 }
 
 export interface ProviderView {
-  provider: "gemini" | "openrouter" | "custom";
+  provider: "groq" | "gemini" | "openrouter" | "custom";
   model: string;
   base_url: string | null;
   has_key: boolean;
