@@ -60,3 +60,11 @@ def test_ties_break_by_higher_base_index():
     low = BlockedWord("l", "foo", base_index=1, ceiling=Ceiling.TIMEOUT)
     high = BlockedWord("h", "bar", base_index=5, ceiling=Ceiling.TIMEOUT)
     assert BlockedWords([low, high]).match("foo bar") == high
+
+
+def test_stronger_fixed_action_wins_when_several_words_match():
+    upto = BlockedWord("u", "foo", ceiling=Ceiling.TIMEOUT)
+    fixed = BlockedWord("f", "bar", ceiling=Ceiling.ALWAYS_TIMEOUT)
+    assert BlockedWords([upto, fixed]).match("foo bar") == fixed
+    ban = BlockedWord("b", "baz", ceiling=Ceiling.ALWAYS_BAN)
+    assert BlockedWords([fixed, ban]).match("bar baz") == ban

@@ -14,7 +14,14 @@ _LEET = str.maketrans(
 )
 _SPLIT = re.compile(r"[^a-z0-9]+")
 _REPEAT = re.compile(r"(.)\1{2,}")
-_SEVERITY = {Ceiling.DELETE: 0, Ceiling.WARN: 1, Ceiling.TIMEOUT: 2, Ceiling.BAN: 3}
+_SEVERITY = {
+    Ceiling.DELETE: 0,
+    Ceiling.WARN: 1,
+    Ceiling.TIMEOUT: 2,
+    Ceiling.ALWAYS_TIMEOUT: 3,
+    Ceiling.BAN: 4,
+    Ceiling.ALWAYS_BAN: 5,
+}
 
 
 @dataclass(frozen=True)

@@ -144,3 +144,91 @@ def test_delete_only_hit_never_lowers_escalation():
     plan = decide_filter(base_index=-1, ceiling=Ceiling.DELETE, ladder=DEFAULT_LADDER, last_index=2)
     assert (plan.kind, plan.level) == (Kind.DELETE, 3)
     assert d(6.5, last=plan.level) == Plan(Kind.TIMEOUT, True, 600, 2, 3)
+
+
+# rules that do one thing, whatever the score
+
+FIXED = {
+    **RULES,
+    "t": Rule("t", "No insults", Ceiling.ALWAYS_TIMEOUT, "community"),
+    "b": Rule("b", "No slurs", Ceiling.ALWAYS_BAN, "community"),
+}
+SHORT_LADDER = (LadderStep(Kind.WARN), LadderStep(Kind.TIMEOUT, 60), LadderStep(Kind.BAN_REQUEST))
+
+
+def fixed(score, rule, last=None, leeway=0.0, ladder=DEFAULT_LADDER):
+    return decide_ai(
+        v(score, rule),
+        rules=FIXED,
+        thresholds=STD,
+        ladder=ladder,
+        last_index=last,
+        vip_leeway=leeway,
+    )
+
+
+def test_always_ban_skips_the_ladder_at_any_breaking_score():
+    assert fixed(6.0, "b") == Plan(Kind.BAN_REQUEST, True, None, 3, 3)
+    assert fixed(9.9, "b") == Plan(Kind.BAN_REQUEST, True, None, 3, 3)
+
+
+def test_always_timeout_skips_the_warning():
+    assert fixed(6.0, "t") == Plan(Kind.TIMEOUT, True, 60, 1, 1)
+
+
+def test_always_timeout_uses_longer_lengths_but_never_bans():
+    assert fixed(6.0, "t", last=1) == Plan(Kind.TIMEOUT, True, 600, 2, 2)
+    assert fixed(6.0, "t", last=3) == Plan(Kind.TIMEOUT, True, 600, 2, 3)
+    assert fixed(9.9, "t") == Plan(Kind.TIMEOUT, True, 600, 2, 3)
+
+
+def test_fixed_rules_still_need_a_breaking_score():
+    assert fixed(5.9, "t") == NO_ACTION
+    assert fixed(5.9, "b") == NO_ACTION
+
+
+def test_fixed_rules_keep_vip_leeway():
+    assert fixed(6.5, "b", leeway=1.0) == NO_ACTION
+    assert fixed(7.0, "b", leeway=1.0).kind is Kind.BAN_REQUEST
+
+
+@pytest.mark.parametrize(
+    "rule,expected",
+    [
+        ("r3", (Kind.WARN, None)),
+        ("t", (Kind.TIMEOUT, 60)),
+        ("b", (Kind.BAN_REQUEST, None)),
+    ],
+)
+def test_a_nine_does_what_the_rule_says(rule, expected):
+    plan = fixed(9.0, rule, ladder=SHORT_LADDER)
+    assert (plan.kind, plan.duration_s) == expected
+
+
+def test_fixed_rules_work_on_a_ladder_without_that_step():
+    warn_only = (LadderStep(Kind.WARN),)
+    assert fixed(6.0, "b", ladder=warn_only) == Plan(Kind.BAN_REQUEST, True, None, 0, 0)
+    assert fixed(6.0, "t", ladder=warn_only) == Plan(Kind.TIMEOUT, True, 600, 0, 0)
+
+
+def test_fixed_rules_count_toward_later_escalation():
+    plan = fixed(6.0, "t")
+    assert d(6.0, last=plan.level) == Plan(Kind.TIMEOUT, True, 600, 2, 2)
+
+
+@pytest.mark.parametrize(
+    "ceiling,kind,duration",
+    [
+        (Ceiling.WARN, Kind.WARN, None),
+        (Ceiling.ALWAYS_TIMEOUT, Kind.TIMEOUT, 60),
+        (Ceiling.ALWAYS_BAN, Kind.BAN_REQUEST, None),
+    ],
+)
+def test_blocked_word_with_a_fixed_action_does_it_on_the_first_hit(ceiling, kind, duration):
+    plan = decide_filter(base_index=-1, ceiling=ceiling, ladder=DEFAULT_LADDER, last_index=None)
+    assert (plan.kind, plan.duration_s) == (kind, duration)
+
+
+def test_warn_rule_never_lands_on_a_timeout_earlier_on_the_ladder():
+    ladder = (LadderStep(Kind.TIMEOUT, 60), LadderStep(Kind.WARN))
+    assert fixed(6.0, "r3", ladder=ladder).kind is Kind.WARN

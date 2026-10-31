@@ -178,8 +178,8 @@
         {:else if step === 3}
           <h1>Your rules</h1>
           <p class="lead">
-            These are a starting point. Write rules the way you would tell a mod. The chip is the strongest thing
-            each rule may do.
+            These are a starting point. Write rules the way you would tell a mod. The chip is what each rule
+            does when it's broken.
           </p>
           <div class="grid2">
             <RuleList bind:rules scope="community" placeholder='Add a rule, like "no political arguments"' />

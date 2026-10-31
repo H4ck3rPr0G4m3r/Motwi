@@ -6,6 +6,8 @@ export const KIND_COLOR: Record<string, string> = {
   timeout: "var(--timeout)",
   ban_request: "var(--ban)",
   ban: "var(--ban)",
+  always_timeout: "var(--timeout)",
+  always_ban: "var(--ban)",
 };
 
 export const CEILING_LABEL: Record<Ceiling, string> = {
@@ -13,13 +15,22 @@ export const CEILING_LABEL: Record<Ceiling, string> = {
   warn: "Warn",
   timeout: "Up to timeout",
   ban: "Up to ban",
+  always_timeout: "Timeout",
+  always_ban: "Ban",
 };
 
+export const CEILING_GROUPS: { label: string; options: Ceiling[] }[] = [
+  { label: "Always do this", options: ["delete", "warn", "always_timeout", "always_ban"] },
+  { label: "Decide by score", options: ["timeout", "ban"] },
+];
+
 export const CEILING_HELP: Record<Ceiling, string> = {
-  delete: "Only deletes the message",
-  warn: "Deletes and warns, never more",
-  timeout: "Can escalate to timeouts",
-  ban: "Can escalate to a ban request",
+  delete: "Deletes the message, whatever the score.",
+  warn: "Warns, whatever the score. Never more.",
+  timeout: "Low scores warn. Higher scores and repeat offenses can reach a timeout.",
+  ban: "Low scores warn. Higher scores and repeat offenses can reach a ban request.",
+  always_timeout: "Times out on the first offense, with no warning. Uses your ladder's lengths.",
+  always_ban: "Goes straight to a ban request for you to approve, with no warning.",
 };
 
 export function duration(s: number | null): string {
@@ -124,6 +135,7 @@ export function score(s: number | null): string {
 }
 
 export const PROVIDER_LABEL: Record<string, string> = {
+  groq: "Groq",
   gemini: "Gemini",
   openrouter: "OpenRouter",
   custom: "Custom",
@@ -134,6 +146,6 @@ export function modelLabel(model: string): string {
   const name = model.includes("/") ? model.split("/").pop()! : model;
   return name
     .split(/[-_]/)
-    .map((w) => (/^[a-z]/.test(w) ? w[0].toUpperCase() + w.slice(1) : w))
+    .map((w) => (w === "gpt" || w === "oss" ? w.toUpperCase() : /^[a-z]/.test(w) ? w[0].toUpperCase() + w.slice(1) : w))
     .join(" ");
 }

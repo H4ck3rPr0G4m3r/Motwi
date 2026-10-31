@@ -18,6 +18,7 @@ class Plan:
 NO_ACTION = Plan(Kind.NONE, False, None, None)
 
 _DEFAULT_CEILING = Ceiling.TIMEOUT
+_FALLBACK_TIMEOUT_S = 600  # a timeout rule on a ladder that has no timeout step
 
 
 def _first_index(ladder: Sequence[LadderStep], kind: Kind) -> int | None:
@@ -41,6 +42,23 @@ def _cap(ladder: Sequence[LadderStep], ceiling: Ceiling) -> int:
             return len(ladder) - 1
 
 
+def _always_ban(ladder: Sequence[LadderStep], level: int) -> Plan:
+    idx = _first_index(ladder, Kind.BAN_REQUEST)
+    if idx is None:
+        idx = len(ladder) - 1
+    return Plan(Kind.BAN_REQUEST, True, None, idx, max(level, idx))
+
+
+def _always_timeout(ladder: Sequence[LadderStep], level: int) -> Plan:
+    """The longest timeout this offense has earned, and never less than the shortest."""
+    timeouts = [i for i, step in enumerate(ladder) if step.kind is Kind.TIMEOUT]
+    if not timeouts:
+        idx = max(level, 0)
+        return Plan(Kind.TIMEOUT, True, _FALLBACK_TIMEOUT_S, idx, idx)
+    idx = max((i for i in timeouts if i <= level), default=timeouts[0])
+    return Plan(Kind.TIMEOUT, True, ladder[idx].duration_s, idx, max(level, idx))
+
+
 def _resolve(
     base: int, ceiling: Ceiling, ladder: Sequence[LadderStep], last_index: int | None
 ) -> Plan:
@@ -51,7 +69,15 @@ def _resolve(
     """
     level = base if last_index is None else max(base, last_index + 1)
     level = min(level, len(ladder) - 1)
-    idx = min(level, _cap(ladder, ceiling))
+    match ceiling:
+        case Ceiling.ALWAYS_BAN:
+            return _always_ban(ladder, level)
+        case Ceiling.ALWAYS_TIMEOUT:
+            return _always_timeout(ladder, level)
+        case Ceiling.WARN:
+            idx = _cap(ladder, ceiling)
+        case _:
+            idx = min(level, _cap(ladder, ceiling))
     if idx < 0:
         return Plan(Kind.DELETE, True, None, -1, level)
     step = ladder[idx]

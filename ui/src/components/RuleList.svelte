@@ -1,6 +1,6 @@
 <script lang="ts">
   import { del, message, patch, post } from "../lib/api";
-  import { CEILING_HELP, CEILING_LABEL, KIND_COLOR } from "../lib/format";
+  import { CEILING_GROUPS, CEILING_HELP, CEILING_LABEL, KIND_COLOR } from "../lib/format";
   import type { Ceiling, Rule } from "../lib/types";
   import Empty from "./Empty.svelte";
   import Icon from "./Icon.svelte";
@@ -19,7 +19,6 @@
     primary?: boolean;
   } = $props();
 
-  const CEILINGS: Ceiling[] = ["delete", "warn", "timeout", "ban"];
   const mine = $derived(rules.filter((r) => r.scope === scope));
 
   let text = $state("");
@@ -112,13 +111,18 @@
         <button class="txt" onclick={() => startEdit(rule)} title="Edit this rule">{rule.text}</button>
       {/if}
       <label class="ceil">
-        <span class="sr-only">Strongest action for "{rule.text}"</span>
+        <span class="sr-only">Action for "{rule.text}"</span>
         <span class="sw" style:background={KIND_COLOR[rule.ceiling]}></span>
         <select
           value={rule.ceiling}
+          title={CEILING_HELP[rule.ceiling]}
           onchange={(e) => update(rule, { ceiling: e.currentTarget.value as Ceiling })}
         >
-          {#each CEILINGS as c (c)}<option value={c}>{CEILING_LABEL[c]}</option>{/each}
+          {#each CEILING_GROUPS as group (group.label)}
+            <optgroup label={group.label}>
+              {#each group.options as c (c)}<option value={c}>{CEILING_LABEL[c]}</option>{/each}
+            </optgroup>
+          {/each}
         </select>
         <Icon name="caret-down" size={11} />
       </label>
@@ -138,13 +142,18 @@
       maxlength="300"
       aria-invalid={error ? "true" : undefined}
     />
-    <label class="sr-only" for="{inputId}-ceiling">Strongest action</label>
-    <select id="{inputId}-ceiling" class="input pick" bind:value={ceiling} title={CEILING_HELP[ceiling]}>
-      {#each CEILINGS as c (c)}<option value={c}>{CEILING_LABEL[c]}</option>{/each}
+    <label class="sr-only" for="{inputId}-ceiling">Action</label>
+    <select id="{inputId}-ceiling" class="input pick" bind:value={ceiling}>
+      {#each CEILING_GROUPS as group (group.label)}
+        <optgroup label={group.label}>
+          {#each group.options as c (c)}<option value={c}>{CEILING_LABEL[c]}</option>{/each}
+        </optgroup>
+      {/each}
     </select>
     <button class="btn" class:pri={primary} disabled={adding}>
       <Icon name="plus" size={14} />{addLabel}
     </button>
+    <p class="help hint">{CEILING_HELP[ceiling]}</p>
   </form>
   {#if error}<p class="err pad" role="alert">{error}</p>{/if}
 </div>
@@ -195,7 +204,8 @@
     outline: 2px solid var(--motwi);
     outline-offset: 1px;
   }
-  .ceil select option {
+  .ceil select option,
+  .ceil select optgroup {
     background: var(--panel-2);
     color: var(--text);
   }
@@ -204,6 +214,10 @@
     grid-template-columns: 1fr 140px auto;
     gap: 8px;
     padding: 10px 12px;
+  }
+  .hint {
+    grid-column: 1 / -1;
+    margin: 0;
   }
   .full {
     grid-column: 1 / -1;

@@ -366,3 +366,26 @@ async def test_stats_for_last_stream_without_streams_is_empty(motwi):
     assert (await motwi.stats("stream"))["empty"] is True
     with pytest.raises(FieldError):
         await motwi.stats("1y")
+
+
+async def test_rules_accept_fixed_actions(motwi):
+    rule = await motwi.add_rule("No slurs", "always_ban", "community")
+    assert rule.ceiling.value == "always_ban"
+    updated = await motwi.update_rule(rule.id, {"ceiling": "always_timeout"})
+    assert updated.ceiling.value == "always_timeout"
+    with pytest.raises(FieldError):
+        await motwi.add_rule("No slurs", "maybe", "community")
+
+
+async def test_try_message_reports_what_a_blocked_word_would_really_do(motwi):
+    await motwi.add_blocked("badword", "always_ban", hidden=False)
+    result = await motwi.try_message("you badword")
+    assert result["action"] == {"kind": "ban_request", "duration_s": None}
+
+
+async def test_groq_is_the_first_provider_and_needs_only_a_key(motwi, secrets):
+    assert next(iter(motwi.ai_config()["providers"])) == "groq"
+    config = await motwi.set_ai("primary", "groq", None, None, "gsk_key")
+    assert secrets.get("ai:primary") == "gsk_key"
+    assert config["primary"]["provider"] == "groq"
+    assert motwi.live.settings.primary == ProviderConfig("groq", "openai/gpt-oss-20b")

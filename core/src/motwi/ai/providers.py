@@ -15,6 +15,7 @@ class ProviderPreset:
 
 
 PROVIDERS: dict[str, ProviderPreset] = {
+    "groq": ProviderPreset("https://api.groq.com/openai/v1", "openai/gpt-oss-20b"),
     "gemini": ProviderPreset(
         "https://generativelanguage.googleapis.com/v1beta/openai/", "gemini-2.5-flash-lite"
     ),

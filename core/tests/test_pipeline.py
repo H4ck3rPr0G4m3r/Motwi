@@ -270,3 +270,19 @@ async def test_reset_stream_keeps_locks_held_by_in_flight_messages(make_rig):
     rig.pipeline.reset_stream()
     assert rig.pipeline._user_locks == {"id-busy": held}
     held.release()
+
+
+async def test_rule_set_to_ban_asks_for_a_ban_on_the_first_offense(make_rig):
+    rule = Rule("rule-slurs", "No slurs", Ceiling.ALWAYS_BAN, "community")
+    rig = make_rig(ai=FakeAI({"slur": (6.2, "r1")}), rules=[rule])
+    rec = await rig.pipeline.handle(chat("slur"))
+    assert rec.kind is Kind.BAN_REQUEST
+    assert rec.status is Status.PENDING
+    assert not any(call[0] == "ban" for call in rig.executor.calls)
+
+
+async def test_rule_set_to_timeout_times_out_on_the_first_offense(make_rig):
+    rule = Rule("rule-insults", "No insults", Ceiling.ALWAYS_TIMEOUT, "community")
+    rig = make_rig(ai=FakeAI({"insult": (6.2, "r1")}), rules=[rule])
+    rec = await rig.pipeline.handle(chat("insult"))
+    assert (rec.kind, rec.duration_s, rec.status) == (Kind.TIMEOUT, 60, Status.DONE)
