@@ -8,6 +8,7 @@ Security model (spec 2, anti-goals):
 - There are no CORS headers, so no web page can read a response. The extension's host
   permissions let it read them without any.
 - A paired extension has its own token, limited to what the in-chat bar needs.
+- Mods never reach this server. The tunnel points at a separate gateway (api/gateway.py).
 """
 
 import asyncio
@@ -18,42 +19,41 @@ import os
 import re
 import secrets
 import webbrowser
-from collections.abc import Awaitable, Callable
-from dataclasses import fields
-from enum import Enum
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from aiohttp import WSMsgType, web
 
 from motwi import __version__
+from motwi.api.common import (
+    EXTENSION_ORIGIN,
+    Handler,
+    action_id_of,
+    action_json,
+    guarded,
+    ok,
+    pump_events,
+)
+from motwi.api.common import body as _body
+from motwi.api.common import error as _error
+from motwi.api.common import text_field as _str
+from motwi.api.gateway import create_gateway
+from motwi.api.mods import Identify, ModAccess
 from motwi.api.pairing import CODE_TTL_S, Pairing, PairingError
 from motwi.autostart import AutoStart
-from motwi.events import (
-    ActionChanged,
-    AIStateChanged,
-    BanRequestReminder,
-    ExtensionChanged,
-    LoginFinished,
-    RecapReady,
-    StatusChanged,
-    StreamChanged,
-)
 from motwi.models import Kind, Source, Status
-from motwi.moderation import AlreadyResolved, ExecutorError
+from motwi.paths import cloudflared_exe, data_dir
 from motwi.paths import extension_dir as default_extension_dir
-from motwi.service import FieldError, Motwi, NotConnected
-from motwi.store import ActionFilter, ActionRecord
-from motwi.twitch.auth import AuthError, AuthExpired
-from motwi.twitch.helix import HelixError
+from motwi.service import FieldError, Motwi
+from motwi.store import ActionFilter
+from motwi.tunnel import Tunnel, TunnelLike
 
 log = logging.getLogger(__name__)
 
 DEFAULT_PORT = 47815
 HELLO_TIMEOUT_S = 5.0
-STATUS_DEBOUNCE_S = 0.2
 
-EXTENSION_ORIGIN = "chrome-extension://"
 PUBLIC_PATHS = ("/api/ping", "/api/show", "/api/quit", "/api/events", "/api/pair")
 # everything a paired extension may call; the rest of the API is the window's alone
 EXTENSION_ROUTES = (
@@ -63,8 +63,6 @@ EXTENSION_ROUTES = (
     ("POST", re.compile(r"/api/actions/\d+/\w+")),
     ("POST", re.compile(r"/api/extension/leave")),
 )
-
-Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
 
 
 class ApiAuth:
@@ -83,39 +81,9 @@ class ApiAuth:
 MOTWI = web.AppKey("motwi", Motwi)
 AUTH = web.AppKey("auth", ApiAuth)
 PAIRING = web.AppKey("pairing", Pairing)
+MODS = web.AppKey("mods", ModAccess)
 SOCKETS = web.AppKey("sockets", set)
 ORIGINS = web.AppKey("origins", set)
-
-
-# serialization
-
-
-def _plain(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, (list, tuple, frozenset, set)):
-        return [_plain(v) for v in value]
-    if isinstance(value, dict):
-        return {k: _plain(v) for k, v in value.items()}
-    if hasattr(value, "__dataclass_fields__"):
-        return {f.name: _plain(getattr(value, f.name)) for f in fields(value)}
-    return value
-
-
-def action_json(a: ActionRecord) -> dict:
-    return _plain(a)
-
-
-def _dumps(data: Any) -> str:
-    return json.dumps(_plain(data), ensure_ascii=False)
-
-
-def ok(data: Any = None, status: int = 200) -> web.Response:
-    return web.json_response({"ok": True} if data is None else data, status=status, dumps=_dumps)
-
-
-def _error(status: int, message: str, **extra: Any) -> web.Response:
-    return web.json_response({"error": message, **extra}, status=status)
 
 
 # middleware
@@ -141,25 +109,7 @@ def _middlewares(port: int) -> list:
                     return _error(401, "not signed in to Motwi")
                 if not _extension_may(request.method, path):
                     return _error(403, "the extension can't do that")
-        try:
-            return await handler(request)
-        except web.HTTPException:
-            raise
-        except FieldError as e:
-            return _error(422, str(e), field=e.field)
-        except (NotConnected, AlreadyResolved) as e:
-            return _error(409, str(e))
-        except KeyError:
-            return _error(404, "not found")
-        except AuthExpired as e:
-            return _error(409, f"{e}. Reconnect Twitch.")
-        except (ExecutorError, AuthError, HelixError) as e:
-            return _error(502, str(e))
-        except json.JSONDecodeError:
-            return _error(400, "the request body isn't valid JSON")
-        except Exception:
-            log.exception("API %s %s failed", request.method, path)
-            return _error(500, "Motwi hit an unexpected error. See the log.")
+        return await guarded(request, handler)
 
     @web.middleware
     async def headers(request: web.Request, handler: Handler) -> web.StreamResponse:
@@ -183,22 +133,6 @@ def _extension_may(method: str, path: str) -> bool:
     return any(method == m and pattern.fullmatch(path) for m, pattern in EXTENSION_ROUTES)
 
 
-async def _body(request: web.Request) -> dict:
-    if not request.can_read_body:
-        return {}
-    data = await request.json()
-    if not isinstance(data, dict):
-        raise FieldError("", "Expected a JSON object.")
-    return data
-
-
-def _str(data: dict, name: str, default: str | None = None) -> str:
-    value = data.get(name, default)
-    if not isinstance(value, str):
-        raise FieldError(name, f"{name} is required.")
-    return value
-
-
 def _role(value: Any) -> str:
     if value not in ("streamer", "bot"):
         raise FieldError("role", "Unknown account.")
@@ -218,6 +152,7 @@ def _reveal_folder(path: Path) -> None:
 def _routes(
     motwi: Motwi,
     pairing: Pairing,
+    mods: ModAccess,
     *,
     port: int,
     on_show: Callable[[], None] | None,
@@ -376,15 +311,11 @@ def _routes(
 
     @r.post("/api/actions/{id}/{verb}")
     async def act(request: web.Request) -> web.Response:
-        verb = request.match_info["verb"]
-        if verb not in ("approve", "deny", "undo", "retry"):
-            raise KeyError(verb)
-        try:
-            action_id = int(request.match_info["id"])
-        except ValueError as e:
-            raise KeyError(request.match_info["id"]) from e
+        action_id = action_id_of(request)
         as_warn = (await _body(request)).get("as") == "warn"
-        return ok(action_json(await motwi.act(action_id, verb, as_warn=as_warn)))
+        return ok(
+            action_json(await motwi.act(action_id, request.match_info["verb"], as_warn=as_warn))
+        )
 
     @r.get("/api/streams")
     async def streams(_: web.Request) -> web.Response:
@@ -395,6 +326,7 @@ def _routes(
         data = await motwi.chat_view()
         data["recent"] = [action_json(a) for a in data["recent"]]
         data["open_requests"] = [action_json(a) for a in data["open_requests"]]
+        data["present"] = mods.present(viewer=None)
         return ok(data)
 
     # stats
@@ -404,6 +336,7 @@ def _routes(
         data = await motwi.overview()
         data["open_requests"] = [action_json(a) for a in data["open_requests"]]
         data["recent"] = [action_json(a) for a in data["recent"]]
+        data["warnings"] = [*data["warnings"], *await mods.warnings()]
         return ok(data)
 
     @r.get("/api/stats")
@@ -459,6 +392,31 @@ def _routes(
     @r.delete("/api/extension/clients/{id}")
     async def revoke_client(request: web.Request) -> web.Response:
         await pairing.revoke(request.match_info["id"])
+        return ok()
+
+    # mods
+
+    @r.get("/api/mods")
+    async def mods_view(_: web.Request) -> web.Response:
+        return ok(await mods.view())
+
+    @r.post("/api/mods/invites")
+    async def invite(_: web.Request) -> web.Response:
+        return ok(await mods.invite(), status=201)
+
+    @r.delete("/api/mods/invites/{id}")
+    async def cancel_invite(request: web.Request) -> web.Response:
+        await mods.cancel_invite(request.match_info["id"])
+        return ok()
+
+    @r.post("/api/mods/link/shared")
+    async def link_shared(_: web.Request) -> web.Response:
+        mods.mark_shared()
+        return ok()
+
+    @r.delete("/api/mods/clients/{id}")
+    async def remove_mod(request: web.Request) -> web.Response:
+        await mods.remove(request.match_info["id"])
         return ok()
 
     # Twitch accounts
@@ -613,54 +571,9 @@ async def _events(request: web.Request) -> web.StreamResponse:
 
     sockets = request.app[SOCKETS]
     sockets.add(ws)
-    q = motwi.bus.subscribe()
-    await ws.send_str(_dumps({"type": "hello", "status": await motwi.status()}))
-    dirty = asyncio.Event()
-
-    async def send_status() -> None:
-        while True:
-            await dirty.wait()
-            await asyncio.sleep(STATUS_DEBOUNCE_S)
-            dirty.clear()
-            await ws.send_str(_dumps({"type": "status", "status": await motwi.status()}))
-
-    async def forward() -> None:
-        while True:
-            e = await q.get()
-            if isinstance(e, ActionChanged):
-                await ws.send_str(_dumps({"type": "action", "action": action_json(e.action)}))
-                dirty.set()  # open request counts change with actions
-            elif isinstance(e, BanRequestReminder):
-                await ws.send_str(_dumps({"type": "reminder", "action": action_json(e.action)}))
-            elif isinstance(e, LoginFinished):
-                await ws.send_str(
-                    _dumps(
-                        {
-                            "type": "login",
-                            "role": e.role,
-                            "ok": e.ok,
-                            "login": e.login,
-                            "error": e.error,
-                        }
-                    )
-                )
-            elif isinstance(e, (StatusChanged, AIStateChanged, StreamChanged, RecapReady)):
-                dirty.set()
-            elif isinstance(e, ExtensionChanged) and client_id is None:
-                await ws.send_str(_dumps({"type": "extension"}))
-
-    async def drain() -> None:
-        async for _ in ws:  # only keepalives after hello; ends when the client leaves
-            pass
-
-    tasks = [asyncio.create_task(c) for c in (send_status(), forward(), drain())]
     try:
-        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        await pump_events(ws, motwi, motwi.status, extension_events=client_id is None)
     finally:
-        for t in tasks:
-            t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        motwi.bus.unsubscribe(q)
         sockets.discard(ws)
         if client_id is not None:
             pairing.detach(client_id, ws)
@@ -683,9 +596,22 @@ def create_app(
     open_url: Callable[[str], Any] = webbrowser.open,
     reveal: Callable[[Path], Any] = _reveal_folder,
     extension_dir: Path | None = None,
+    tunnel: TunnelLike | None = None,
+    identify: Identify | None = None,
 ) -> web.Application:
     app = web.Application(middlewares=_middlewares(port), client_max_size=256 * 1024)
     pairing = Pairing(motwi.store, motwi.bus)
+    folder = extension_dir or default_extension_dir()
+    mods = ModAccess(
+        motwi,
+        pairing,
+        tunnel=tunnel or Tunnel(cloudflared_exe(), data_dir() / "cloudflared.yml"),
+        make_gateway=lambda m: create_gateway(
+            m, motwi, pairing, ui_dir=ui_dir, extension_dir=folder
+        ),
+        identify=identify,
+    )
+    app[MODS] = mods
     app[MOTWI] = motwi
     app[AUTH] = auth
     app[PAIRING] = pairing
@@ -694,6 +620,10 @@ def create_app(
 
     async def load_pairing(_: web.Application) -> None:
         await pairing.load()
+        await mods.start()
+
+    async def stop_mods(_: web.Application) -> None:
+        await mods.close()
 
     async def close_sockets(a: web.Application) -> None:
         # otherwise shutdown waits on them, and quitting looks like a hang
@@ -702,17 +632,19 @@ def create_app(
 
     app.on_startup.append(load_pairing)
     app.on_shutdown.append(close_sockets)
+    app.on_cleanup.append(stop_mods)
     app.add_routes(
         _routes(
             motwi,
             pairing,
+            mods,
             port=port,
             on_show=on_show,
             on_quit=on_quit,
             autostart=autostart or AutoStart(),
             open_url=open_url,
             reveal=reveal,
-            extension_dir=extension_dir or default_extension_dir(),
+            extension_dir=folder,
         )
     )
     app.router.add_get("/api/events", _events)

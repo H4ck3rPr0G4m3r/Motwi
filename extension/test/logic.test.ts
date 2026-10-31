@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { modelLabel } from "../../ui/src/lib/format";
 import { matchLines, normalize, type LineInfo } from "../src/content/match";
 import { channelFromUrl } from "../src/shared/channel";
+import { expectedProof, newNonce } from "../src/shared/proof";
 import {
+  alsoHere,
   barView,
   buttonsFor,
   countParts,
@@ -295,6 +297,53 @@ describe("labels", () => {
     expect(requestFoot(action({ status: "pending", hold_applied: true }))).toContain("Held");
     expect(requestFoot(action({ status: "pending", hold_applied: false }))).toContain("Not held");
     expect(requestFoot(action({ status: "expired", hold_applied: true }))).toContain("Hold ended");
+  });
+});
+
+describe("a mod's bar", () => {
+  it("never offers the switch, even with the engine running", () => {
+    expect(barView("open", status(), "own").canSwitch).toBe(true);
+    expect(barView("open", status(), "mod")).toMatchObject({ label: "Watching", canSwitch: false });
+  });
+
+  it("says what to do, and not what only the streamer can do", () => {
+    expect(barView("moved", null, "mod")).toMatchObject({
+      label: "Motwi moved",
+      sub: "Ask the streamer for the new link",
+    });
+    expect(barView("revoked", null, "mod").sub).toBe("Ask the streamer for a new invite");
+    expect(barView("revoked", null, "own").sub).toBe("Connect again in Motwi's Settings");
+    expect(barView("offline", null, "mod").label).toBe("Can't reach Motwi");
+    expect(barView("open", status({ engine: "reconnect" }), "mod").label).toBe("Twitch disconnected");
+  });
+});
+
+describe("who's here", () => {
+  it("names people, briefly", () => {
+    expect(alsoHere([])).toBe("");
+    expect(alsoHere(undefined)).toBe("");
+    expect(alsoHere(["brakkenhoff"])).toBe("brakkenhoff is here too");
+    expect(alsoHere(["brakkenhoff", "lumenfox"])).toBe("brakkenhoff and lumenfox are here too");
+    expect(alsoHere(["a", "b", "c"])).toBe("a and 2 others are here too");
+  });
+});
+
+describe("Motwi's proof", () => {
+  it("matches the core's, down to the byte", async () => {
+    // from core: proof_for(sha256("mod-token").hexdigest(), "https://a.trycloudflare.com", "n1")
+    expect(await expectedProof("mod-token", "https://a.trycloudflare.com", "n1")).toBe(
+      "3dc8a57f7b34e8df3469e089285f0485f62aa05eda219ba9e0da2e3ed358dafb",
+    );
+  });
+
+  it("changes with the address, so another site can't pass it on", async () => {
+    const real = await expectedProof("t", "https://real.trycloudflare.com", "n");
+    expect(await expectedProof("t", "https://evil.trycloudflare.com", "n")).not.toBe(real);
+  });
+
+  it("uses a fresh nonce each time", () => {
+    expect(newNonce()).not.toBe(newNonce());
+    expect(newNonce()).toMatch(/^[0-9a-f]{32}$/);
   });
 });
 

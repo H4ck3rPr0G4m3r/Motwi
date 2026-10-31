@@ -19,6 +19,12 @@ To see Motwi inside Twitch chat, build the extension (`cd extension && npm ci &&
 
 Other commands: `motwi run` moderates headless in the terminal, and `motwi login`, `motwi logout` and `motwi set-key` manage accounts and keys from the command line.
 
+## Mods
+
+Mods can answer ban requests, undo actions and act on suggestions from their own computers. They can't change rules or settings. On the Mods page, press **Invite a mod** and send them the link. They install the extension (the link offers it), sign in with Twitch, and Motwi checks with Twitch that they really mod your channel, again every 10 minutes after that. Everything they do is recorded under their name.
+
+Motwi reaches them through a Cloudflare quick tunnel, so there's no account to make or port to open. It runs only while you have a mod or an open invite. The address changes whenever Motwi restarts. Motwi then shows you a new link to send them, and they don't have to sign in again.
+
 ## Development
 
 ```sh

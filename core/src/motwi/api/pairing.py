@@ -1,7 +1,8 @@
 """Pairing a browser with this Motwi: a one-time code, redeemed for a revocable token.
 
 Tokens are random 256-bit values, so storing a plain SHA-256 of each is enough: a copy of
-the database can't be turned back into a working token.
+the database can't be turned back into a working token. The streamer's browsers ("extension")
+and mods' browsers ("mod") share this table, but a token only ever works for its own kind.
 """
 
 import hashlib
@@ -33,11 +34,11 @@ class Pairing:
         self._bus = bus
         self._clock = clock
         self._code: tuple[str, float] | None = None
-        self._ids_by_hash: dict[str, str] = {}
+        self._by_hash: dict[str, ClientRecord] = {}
         self._sockets: dict[str, set[web.WebSocketResponse]] = {}
 
     async def load(self) -> None:
-        self._ids_by_hash = {c.token_hash: c.id for c in await self._store.list_clients()}
+        self._by_hash = {c.token_hash: c for c in await self._store.list_clients()}
 
     def start(self) -> str:
         """A fresh one-time code. It replaces any earlier one."""
@@ -57,23 +58,40 @@ class Pairing:
         client = await self._store.add_client(
             "extension", " ".join(label.split())[:LABEL_MAX] or "Browser", _hash(token)
         )
-        self._ids_by_hash[client.token_hash] = client.id
+        self._by_hash[client.token_hash] = client
+        self._bus.publish(ExtensionChanged())
+        return client, token
+
+    async def add_mod(self, label: str, user_id: str, login: str) -> tuple[ClientRecord, str]:
+        token = secrets.token_urlsafe(32)
+        client = await self._store.add_client("mod", label, _hash(token), user_id, login)
+        self._by_hash[client.token_hash] = client
         self._bus.publish(ExtensionChanged())
         return client, token
 
     def check(self, token: str | None) -> str | None:
-        """The client id for a valid token, else None."""
-        return self._ids_by_hash.get(_hash(token)) if token else None
+        """The client id for a valid token from the streamer's own browser, else None."""
+        record = self._by_hash.get(_hash(token)) if token else None
+        return record.id if record is not None and record.kind == "extension" else None
+
+    def mod_for(self, token: str | None) -> ClientRecord | None:
+        record = self._by_hash.get(_hash(token)) if token else None
+        return record if record is not None and record.kind == "mod" else None
+
+    def mod_by_id(self, client_id: str) -> ClientRecord | None:
+        return next(
+            (c for c in self._by_hash.values() if c.id == client_id and c.kind == "mod"), None
+        )
 
     async def revoke(self, client_id: str) -> None:
         if not await self._store.delete_client(client_id):
             raise KeyError(client_id)
-        self._ids_by_hash = {h: i for h, i in self._ids_by_hash.items() if i != client_id}
+        self._by_hash = {h: c for h, c in self._by_hash.items() if c.id != client_id}
         for ws in list(self._sockets.pop(client_id, ())):
             await ws.close(code=4401, message=b"disconnected from Motwi")
         self._bus.publish(ExtensionChanged())
 
-    async def clients(self) -> list[dict]:
+    async def clients(self, kind: str = "extension") -> list[dict]:
         return [
             {
                 "id": c.id,
@@ -81,9 +99,24 @@ class Pairing:
                 "created_at": c.created_at,
                 "last_seen": c.last_seen,
                 "connected": bool(self._sockets.get(c.id)),
+                "user_id": c.user_id,
+                "login": c.login,
             }
             for c in await self._store.list_clients()
+            if c.kind == kind
         ]
+
+    def connected_mods(self) -> list[str]:
+        return [
+            c.login
+            for c in self._by_hash.values()
+            if c.kind == "mod" and c.login and self._sockets.get(c.id)
+        ]
+
+    def has_connected_browser(self) -> bool:
+        return any(
+            c.kind == "extension" and self._sockets.get(c.id) for c in self._by_hash.values()
+        )
 
     async def attach(self, client_id: str, ws: web.WebSocketResponse) -> None:
         self._sockets.setdefault(client_id, set()).add(ws)

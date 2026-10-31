@@ -1,6 +1,7 @@
 """Where Motwi keeps its data on this machine."""
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -37,6 +38,28 @@ def ui_dir() -> Path:
     if bundle:
         return Path(bundle) / "ui"
     return Path(__file__).resolve().parents[3] / "ui" / "dist"
+
+
+def cloudflared_exe() -> Path | None:
+    """`MOTWI_CLOUDFLARED`, the frozen app's bundle, the one packaging/build.py downloads, or
+    one on PATH."""
+    override = os.environ.get("MOTWI_CLOUDFLARED")
+    if override:
+        return Path(override)
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        return Path(bundle) / "cloudflared" / "cloudflared.exe"
+    built = (
+        Path(__file__).resolve().parents[3]
+        / "packaging"
+        / "out"
+        / "cloudflared"
+        / "cloudflared.exe"
+    )
+    if built.is_file():
+        return built
+    found = shutil.which("cloudflared")
+    return Path(found) if found else None
 
 
 def extension_dir() -> Path:

@@ -20,6 +20,8 @@ export interface Chat {
   recent: Action[];
   open_requests: Action[];
   warnings: Warning[];
+  /** Who else has Motwi open in this chat right now. */
+  present?: string[];
 }
 
 /**
@@ -28,22 +30,28 @@ export interface Chat {
  * - open: connected and authenticated.
  * - offline: the core can't be reached, usually because Motwi isn't running.
  * - revoked: the core refused this token; it was removed in Motwi's Settings.
+ * - moved: a mod's Motwi isn't at the address they knew. It changes whenever it restarts.
  */
-export type Link = "unpaired" | "connecting" | "open" | "offline" | "revoked";
+export type Link = "unpaired" | "connecting" | "open" | "offline" | "revoked" | "moved";
+
+/** own: this browser belongs to the streamer. mod: it helps moderate someone else's channel. */
+export type Role = "own" | "mod";
 
 export interface Snapshot {
   link: Link;
   channel: string | null;
   chat: Chat | null;
+  role: Role;
 }
 
-// long-lived port from a Twitch tab or the toolbar popup
+// long-lived port: PORT_NAME:channel from a Twitch tab, or plain PORT_NAME from the popup
 export type PortRequest =
   | { type: "act"; req: number; id: number; verb: Verb; asWarn?: boolean }
   | { type: "pause"; req: number; paused: boolean };
 
 export type PortEvent =
   | { type: "snapshot"; snapshot: Snapshot }
+  | { type: "list"; items: Snapshot[] }
   | { type: "action"; action: Action }
   | { type: "result"; req: number; ok: boolean; error?: string; action?: Action };
 
@@ -51,13 +59,26 @@ export type PortEvent =
 export type Request =
   | { type: "whoami" }
   | { type: "pair"; code: string }
-  | { type: "forget" };
+  | { type: "forget"; channel: string | null }
+  | { type: "join-link"; code: string | null }
+  | { type: "link-info"; origin: string }
+  | { type: "join"; origin: string; code: string; twitchToken: string };
 
 export interface WhoAmI {
-  channel: string | null;
+  channels: string[];
 }
 
 export type PairResult = { ok: true; channel: string | null } | { ok: false; error: string };
+
+export interface LinkInfo {
+  /** new: nothing here yet. moved: this browser just followed its Motwi to this address. */
+  state: "unreachable" | "new" | "moved" | "own";
+  channel: string | null;
+}
+
+export type JoinResult =
+  | { ok: true; channel: string | null; login: string }
+  | { ok: false; error: string };
 
 /** Sent to tabs after pairing, so an open Twitch tab activates without a reload. */
 export const PAIRED = "motwi-paired";

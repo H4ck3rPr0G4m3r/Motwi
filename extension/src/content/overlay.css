@@ -324,6 +324,12 @@ button:disabled {
   background: var(--mw-control-hover);
 }
 
+.req-here {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--mw-dim);
+}
+
 .req-foot {
   margin-top: 8px;
   display: flex;

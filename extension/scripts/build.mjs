@@ -16,6 +16,8 @@ const ENTRIES = {
   "page-world": "src/content/page-world.ts",
   pair: "src/pair/main.ts",
   popup: "src/popup/main.ts",
+  join: "src/join/main.ts",
+  "join-bridge": "src/join/bridge.ts",
 };
 
 const FONTS = [

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Join Motwi</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        background: #0f0f12;
+        color: #efeff1;
+        font: 400 14px/1.5 Inter, "Segoe UI", system-ui, sans-serif;
+      }
+      main {
+        width: min(480px, calc(100vw - 32px));
+        padding: 24px;
+        background: #18181b;
+        border: 1px solid #2a2a30;
+        border-radius: 6px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+      }
+      .logo {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+        background: #4fd1b5;
+        color: #06231d;
+        font-weight: 700;
+        display: grid;
+        place-items: center;
+      }
+      h1 {
+        margin: 16px 0 6px;
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+      p {
+        margin: 0;
+        color: #adadb8;
+      }
+      ol {
+        margin: 14px 0 0;
+        padding-left: 20px;
+        color: #adadb8;
+      }
+      li + li {
+        margin-top: 6px;
+      }
+      code {
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 12.5px;
+        color: #efeff1;
+      }
+      a {
+        color: #4fd1b5;
+        font-weight: 600;
+      }
+      [hidden] {
+        display: none;
+      }
+    </style>
+    <script src="/motwi-join.js" defer></script>
+  </head>
+  <body>
+    <main aria-live="polite">
+      <header><span class="logo" aria-hidden="true">M</span>Motwi</header>
+
+      <section id="working">
+        <h1>Opening Motwi</h1>
+        <p>This takes a moment.</p>
+      </section>
+
+      <section id="missing" hidden>
+        <h1>Install Motwi's extension first</h1>
+        <p>Use the browser you watch Twitch in. It works in Chrome, Edge, Brave and Opera.</p>
+        <ol>
+          <li><a href="/motwi-extension.zip">Download the extension</a> and unzip it to a folder you'll keep.</li>
+          <li>Open <code>chrome://extensions</code> (Edge: <code>edge://extensions</code>).</li>
+          <li>Turn on Developer mode.</li>
+          <li>Choose Load unpacked and pick that folder.</li>
+          <li>Come back and reload this page.</li>
+        </ol>
+      </section>
+    </main>
+  </body>
+</html>

@@ -118,7 +118,7 @@
     {#each data.warnings as w (w.kind + w.text)}
       <div class="notice {w.level}" role="alert">
         <span class="ic">
-          <Icon name={w.level === "error" ? "warning-circle" : w.level === "info" ? "arrow-circle-up" : "warning"} size={18} />
+          <Icon name={w.kind === "mods" ? "shield-check" : w.level === "error" ? "warning-circle" : w.level === "info" ? "arrow-circle-up" : "warning"} size={18} />
         </span>
         <div style="flex:1">{w.text}</div>
         {#if w.kind === "twitch" && s.twitch.state === "reconnect"}
@@ -127,6 +127,8 @@
           <button class="btn sm" onclick={reconnect} disabled={reconnecting}>Try again</button>
         {:else if w.kind === "ai"}
           <button class="btn sm" onclick={() => go("settings")}>AI settings</button>
+        {:else if w.kind === "mods"}
+          <button class="btn sm" onclick={() => go("mods")}>Get the link</button>
         {:else if w.kind === "update" && w.url}
           <a class="btn sm" href={w.url} target="_blank" rel="noreferrer">Get the update</a>
         {/if}
