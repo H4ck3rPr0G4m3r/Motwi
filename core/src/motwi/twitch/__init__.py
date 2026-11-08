@@ -6,14 +6,17 @@ import os
 # MOTWI_TWITCH_CLIENT_ID overrides it for development.
 CLIENT_ID = "fo0j62netc6u54f0wqf4khruex5exy"
 
-SCOPES: tuple[str, ...] = (
+_ACTING: tuple[str, ...] = (
     "user:read:chat",
     "user:write:chat",
     "moderator:manage:banned_users",
     "moderator:manage:chat_messages",
     "moderator:manage:warnings",
 )
-BOT_SCOPES: tuple[str, ...] = (*SCOPES, "user:read:moderated_channels")
+# moderation:read lets Motwi check who really mods the channel, before and after a mod joins
+CHECK_MODS_SCOPE = "moderation:read"
+SCOPES: tuple[str, ...] = (*_ACTING, CHECK_MODS_SCOPE)
+BOT_SCOPES: tuple[str, ...] = (*_ACTING, "user:read:moderated_channels")
 
 
 def client_id() -> str:

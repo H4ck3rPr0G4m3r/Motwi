@@ -12,7 +12,13 @@
   },
   "background": { "service_worker": "worker.js" },
   "permissions": ["storage"],
-  "host_permissions": ["http://127.0.0.1/*", "ws://127.0.0.1/*"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "ws://127.0.0.1/*",
+    "https://*.trycloudflare.com/*",
+    "wss://*.trycloudflare.com/*",
+    "https://id.twitch.tv/*"
+  ],
   "content_scripts": [
     {
       "matches": ["https://www.twitch.tv/*", "https://dashboard.twitch.tv/*"],
@@ -31,6 +37,11 @@
     {
       "matches": ["http://127.0.0.1/pair.html*"],
       "js": ["pair.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.trycloudflare.com/motwi-join*", "http://127.0.0.1/motwi-join*"],
+      "js": ["join-bridge.js"],
       "run_at": "document_idle"
     }
   ],

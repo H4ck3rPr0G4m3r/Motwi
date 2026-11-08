@@ -14,6 +14,9 @@ analysis = Analysis(
     datas=[
         (str(root / "ui" / "dist"), "ui"),
         (str(root / "extension" / "dist"), "extension"),
+        # build.py downloads it, pinned by checksum, along with its license
+        (str(here / "out" / "cloudflared" / "cloudflared.exe"), "cloudflared"),
+        (str(here / "out" / "cloudflared" / "LICENSE.txt"), "cloudflared"),
         # keyring finds its backends through package metadata; without this it silently
         # falls back to one that can't store anything
         *copy_metadata("keyring"),

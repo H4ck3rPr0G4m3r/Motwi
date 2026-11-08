@@ -135,6 +135,11 @@ def main() -> None:
         run_value = reg_value(RUN_KEY, "Motwi")
         ok("start with Windows registered", run_value == f'"{exe}" --background', run_value)
         start_menu = Path(os.environ["APPDATA"]) / r"Microsoft\Windows\Start Menu\Programs"
+        ok(
+            "cloudflared is bundled with its license",
+            (app_dir / "_internal" / "cloudflared" / "cloudflared.exe").is_file()
+            and (app_dir / "_internal" / "cloudflared" / "LICENSE.txt").is_file(),
+        )
         ok("Start menu shortcut", (start_menu / "Motwi.lnk").is_file())
 
         report = tmp / "report.json"

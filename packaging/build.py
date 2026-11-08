@@ -7,6 +7,7 @@ ISCC environment variable).
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -14,12 +15,19 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.request
 import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 OUT = HERE / "out"
+
+# the tunnel mods reach Motwi through; pinned, so a build only ever ships this exact file
+CLOUDFLARED_VERSION = "2026.10.7"
+CLOUDFLARED_SHA256 = "2493dbc168923bb3e59e5e7716f71deced92992eea9acd6e9d74f84ac7751343"
+CLOUDFLARED_RELEASES = "https://github.com/cloudflare/cloudflared/releases/download"
+CLOUDFLARED_LICENSE = "https://raw.githubusercontent.com/cloudflare/cloudflared/{}/LICENSE"
 
 VERSION_INFO = """VSVersionInfo(
   ffi=FixedFileInfo(filevers=({a}, {b}, {c}, 0), prodvers=({a}, {b}, {c}, 0), mask=0x3f, flags=0,
@@ -91,6 +99,34 @@ def zip_extension(version: str) -> Path:
             if f.is_file():
                 z.write(f, f.relative_to(source))
     return target
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        while chunk := f.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def fetch_cloudflared() -> Path:
+    folder = OUT / "cloudflared"
+    folder.mkdir(exist_ok=True)
+    exe = folder / "cloudflared.exe"
+    if not exe.is_file() or _sha256(exe) != CLOUDFLARED_SHA256:
+        url = f"{CLOUDFLARED_RELEASES}/{CLOUDFLARED_VERSION}/cloudflared-windows-amd64.exe"
+        print(f"+ download {url}", flush=True)
+        partial = exe.with_suffix(".part")
+        urllib.request.urlretrieve(url, partial)
+        found = _sha256(partial)
+        if found != CLOUDFLARED_SHA256:
+            partial.unlink()
+            raise SystemExit(f"cloudflared's checksum is wrong: {found}")
+        partial.replace(exe)
+    license_file = folder / "LICENSE.txt"
+    if not license_file.is_file():
+        urllib.request.urlretrieve(CLOUDFLARED_LICENSE.format(CLOUDFLARED_VERSION), license_file)
+    return exe
 
 
 def build_app(version: str) -> Path:
@@ -166,6 +202,7 @@ def main() -> None:
     if not args.skip_web:
         build_web()
     built = [zip_extension(version)]
+    fetch_cloudflared()
     exe = build_app(version)
     self_test(exe)
     if not args.no_installer:

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { score } from "../../../ui/src/lib/format";
-  import { requestFoot } from "../shared/labels";
+  import { alsoHere, requestFoot } from "../shared/labels";
   import type { Action } from "../shared/protocol";
   import Icon from "./Icon.svelte";
   import { store } from "./store.svelte";
@@ -9,6 +9,7 @@
   const busy = $derived(store.busy[action.id]);
   const error = $derived(store.errors[action.id]);
   const failed = $derived(action.status === "failed");
+  const others = $derived(alsoHere(store.chat?.present));
 </script>
 
 <div class="req" role="alertdialog" aria-label="Ban request for {action.user_login}">
@@ -42,4 +43,5 @@
     <span>{failed ? "Nothing changed on Twitch" : requestFoot(action)}</span>
     {#if more > 0}<span>{more} more waiting</span>{/if}
   </div>
+  {#if others}<div class="req-here">{others}</div>{/if}
 </div>
